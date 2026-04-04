@@ -125,8 +125,9 @@ actor StoreKitLiveActor {
     func purchase(productID: String) async throws -> StoreKitClient.Transaction {
         let product = try await fetchOrGetCachedProduct(for: productID)
         let purchaseResult = try await product.purchase()
-        let transaction = try handlePurchaseResult(purchaseResult)
-        return transaction
+        let (wrapped, raw) = try handlePurchaseResult(purchaseResult)
+        await raw.finish()
+        return wrapped
     }
     
     func restorePurchases() async -> [StoreKitClient.Transaction] {
@@ -223,13 +224,13 @@ actor StoreKitLiveActor {
         }
     }
     
-    private func handlePurchaseResult(_ result: StoreKit.Product.PurchaseResult) throws -> StoreKitClient.Transaction {
+    private func handlePurchaseResult(_ result: StoreKit.Product.PurchaseResult) throws -> (StoreKitClient.Transaction, StoreKit.Transaction) {
         switch result {
         case .success(let verificationResult):
             switch verificationResult {
             case .verified(let transaction):
                 logger("Purchase succeeded for \(transaction.productID)")
-                return StoreKitClient.Transaction(rawValue: transaction)
+                return (StoreKitClient.Transaction(rawValue: transaction), transaction)
             case .unverified(_, let error):
                     throw StoreKitClient.Error.unverifiedTransaction(error)
             }

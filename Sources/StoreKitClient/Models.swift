@@ -34,14 +34,18 @@ extension StoreKitClient {
 
         /// The type of product (consumable, non-consumable, subscription, etc.).
         public var type: StoreKit.Product.ProductType
-        
+
+        /// The subscription period for auto-renewable subscriptions.
+        public var subscriptionPeriod: SubscriptionPeriod?
+
         public init(
             id: String,
             displayName: String,
             description: String,
             price: Decimal,
             displayPrice: String,
-            type: StoreKit.Product.ProductType
+            type: StoreKit.Product.ProductType,
+            subscriptionPeriod: SubscriptionPeriod? = nil
         ) {
             self.id = id
             self.displayName = displayName
@@ -49,6 +53,22 @@ extension StoreKitClient {
             self.price = price
             self.displayPrice = displayPrice
             self.type = type
+            self.subscriptionPeriod = subscriptionPeriod
+        }
+    }
+
+    /// Represents the duration of a subscription period.
+    public struct SubscriptionPeriod: Equatable, Sendable, Hashable {
+        public var unit: Unit
+        public var value: Int
+
+        public enum Unit: Sendable, Equatable, Hashable {
+            case day, week, month, year
+        }
+
+        public init(unit: Unit, value: Int) {
+            self.unit = unit
+            self.value = value
         }
     }
 }

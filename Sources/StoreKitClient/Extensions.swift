@@ -17,5 +17,23 @@ extension StoreKitClient.Product {
         self.price = rawValue.price
         self.displayPrice = rawValue.displayPrice
         self.type = rawValue.type
+        if let period = rawValue.subscription?.subscriptionPeriod {
+            self.subscriptionPeriod = StoreKitClient.SubscriptionPeriod(
+                unit: period.unit.toClientUnit,
+                value: period.value
+            )
+        }
+    }
+}
+
+extension StoreKit.Product.SubscriptionPeriod.Unit {
+    var toClientUnit: StoreKitClient.SubscriptionPeriod.Unit {
+        switch self {
+        case .day: return .day
+        case .week: return .week
+        case .month: return .month
+        case .year: return .year
+        @unknown default: return .month
+        }
     }
 }
