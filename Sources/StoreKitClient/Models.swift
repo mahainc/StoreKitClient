@@ -35,8 +35,8 @@ extension StoreKitClient {
         /// The type of product (consumable, non-consumable, subscription, etc.).
         public var type: StoreKit.Product.ProductType
 
-        /// The subscription period for auto-renewable subscriptions.
-        public var subscriptionPeriod: SubscriptionPeriod?
+        /// Subscription info (period, introductory offer). `nil` for non-subscription products.
+        public var subscription: SubscriptionInfo?
 
         public init(
             id: String,
@@ -45,7 +45,7 @@ extension StoreKitClient {
             price: Decimal,
             displayPrice: String,
             type: StoreKit.Product.ProductType,
-            subscriptionPeriod: SubscriptionPeriod? = nil
+            subscription: SubscriptionInfo? = nil
         ) {
             self.id = id
             self.displayName = displayName
@@ -53,22 +53,141 @@ extension StoreKitClient {
             self.price = price
             self.displayPrice = displayPrice
             self.type = type
-            self.subscriptionPeriod = subscriptionPeriod
+            self.subscription = subscription
         }
     }
+}
 
-    /// Represents the duration of a subscription period.
-    public struct SubscriptionPeriod: Equatable, Sendable, Hashable {
-        public var unit: Unit
-        public var value: Int
+// MARK: - StoreKitClient.SubscriptionInfo
 
-        public enum Unit: Sendable, Equatable, Hashable {
-            case day, week, month, year
+extension StoreKitClient {
+    /// Subscription-specific information for a product.
+    public struct SubscriptionInfo: Equatable, Sendable, Hashable {
+        /// The subscription's renewal period.
+        public var subscriptionPeriod: SubscriptionPeriod
+
+        /// The introductory offer, if available.
+        public var introductoryOffer: SubscriptionOffer?
+
+        /// The subscription group identifier.
+        public var subscriptionGroupID: String
+
+        public init(
+            subscriptionPeriod: SubscriptionPeriod,
+            introductoryOffer: SubscriptionOffer? = nil,
+            subscriptionGroupID: String
+        ) {
+            self.subscriptionPeriod = subscriptionPeriod
+            self.introductoryOffer = introductoryOffer
+            self.subscriptionGroupID = subscriptionGroupID
         }
+    }
+}
+
+// MARK: - StoreKitClient.SubscriptionPeriod
+
+extension StoreKitClient {
+    /// Represents a subscription's billing period.
+    public struct SubscriptionPeriod: Equatable, Sendable, Hashable {
+        /// The unit of time for the period.
+        public var unit: Unit
+
+        /// The number of units per period (e.g., 1 week, 3 days).
+        public var value: Int
 
         public init(unit: Unit, value: Int) {
             self.unit = unit
             self.value = value
+        }
+
+        public enum Unit: String, Sendable, Hashable {
+            case day, week, month, year
+        }
+
+        /// Human-readable period description (e.g., "1 week", "3 days").
+        public var displayDescription: String {
+            switch (unit, value) {
+            case (.day, 1): return "1 day"
+            case (.day, let v): return "\(v) days"
+            case (.week, 1): return "1 week"
+            case (.week, let v): return "\(v) weeks"
+            case (.month, 1): return "1 month"
+            case (.month, let v): return "\(v) months"
+            case (.year, 1): return "1 year"
+            case (.year, let v): return "\(v) years"
+            }
+        }
+    }
+}
+
+// MARK: - StoreKitClient.SubscriptionOffer
+
+extension StoreKitClient {
+    /// Represents a subscription offer (introductory or promotional).
+    public struct SubscriptionOffer: Equatable, Sendable, Hashable {
+        /// The type of offer.
+        public var type: OfferType
+
+        /// The offer's duration period.
+        public var period: SubscriptionPeriod
+
+        /// The number of periods the offer lasts.
+        public var periodCount: Int
+
+        /// The offer price (0 for free trials).
+        public var price: Decimal
+
+        /// The localized display price.
+        public var displayPrice: String
+
+        /// How the customer pays during the offer.
+        public var paymentMode: PaymentMode
+
+        public init(
+            type: OfferType,
+            period: SubscriptionPeriod,
+            periodCount: Int,
+            price: Decimal,
+            displayPrice: String,
+            paymentMode: PaymentMode
+        ) {
+            self.type = type
+            self.period = period
+            self.periodCount = periodCount
+            self.price = price
+            self.displayPrice = displayPrice
+            self.paymentMode = paymentMode
+        }
+
+        public enum OfferType: String, Sendable, Hashable {
+            case introductory
+            case promotional
+        }
+
+        public enum PaymentMode: String, Sendable, Hashable {
+            /// Free for the duration (e.g., 3-day free trial).
+            case freeTrial
+            /// Discounted price upfront for the duration.
+            case payUpFront
+            /// Discounted price per period for the duration.
+            case payAsYouGo
+        }
+
+        /// Whether this is a free trial offer.
+        public var isFreeTrial: Bool {
+            paymentMode == .freeTrial
+        }
+
+        /// Human-readable offer description (e.g., "3-day free trial").
+        public var displayDescription: String {
+            switch paymentMode {
+            case .freeTrial:
+                return "\(period.displayDescription) free trial"
+            case .payUpFront:
+                return "\(displayPrice) for \(period.displayDescription)"
+            case .payAsYouGo:
+                return "\(displayPrice)/\(period.unit.rawValue) for \(periodCount) \(period.unit.rawValue)\(periodCount > 1 ? "s" : "")"
+            }
         }
     }
 }
@@ -104,6 +223,15 @@ extension StoreKitClient {
         /// The quantity of items purchased (for consumables).
         public var purchasedQuantity: Int { rawValue?.purchasedQuantity ?? 1 }
 
+        /// The type of offer that was applied to this transaction, if any.
+        public var offerType: StoreKit.Transaction.OfferType? { rawValue?.offerType }
+
+        /// The identifier of the offer that was applied, if any.
+        public var offerID: String? { rawValue?.offerID }
+
+        /// Whether this transaction was purchased with a free trial.
+        public var isFreeTrial: Bool { offerType == .introductory }
+
         /// The localized, formatted price string for this transaction.
         ///
         /// Returns "Unknown Price" if the transaction has no pricing information.
@@ -130,7 +258,7 @@ extension StoreKitClient {
                 return formatter.string(from: price as NSDecimalNumber) ?? "\(price) \(currencyCode)"
             }
         }
-        
+
         public init(rawValue: StoreKit.Transaction? = nil) {
             self.rawValue = rawValue
         }
@@ -142,7 +270,7 @@ extension StoreKitClient {
             guard let expirationDate else { return false }
             return expirationDate < Date()
         }
-        
+
         /// Mock consumable transaction for testing
         public static let mockConsumable = Transaction(rawValue: nil)
 

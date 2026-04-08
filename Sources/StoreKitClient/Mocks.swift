@@ -48,7 +48,8 @@ extension StoreKitClient {
             .init(rawValue: nil)
         },
         restorePurchases: { [] },
-        getLatestTransaction: { nil }
+        getLatestTransaction: { nil },
+        isEligibleForIntroOffer: { _ in false }
     )
     
     /// A failing implementation that throws errors for operations.
@@ -65,21 +66,63 @@ extension StoreKitClient {
             throw URLError(.badServerResponse)
         },
         restorePurchases: { [] },
-        getLatestTransaction: { nil }
+        getLatestTransaction: { nil },
+        isEligibleForIntroOffer: { _ in false }
     )
     
     /// A successful implementation with mock products and transactions.
     ///
-    /// Returns three mock products (weekly, monthly, yearly) and simulates
-    /// successful purchases with a small delay.
+    /// Returns three mock subscription products (weekly with 3-day trial, monthly, yearly)
+    /// and simulates successful purchases with a small delay.
     public static let happy = Self(
         receiptURL: { nil },
         canMakePayments: { true },
         loadProducts: { _ in
             let products: [StoreKitClient.Product] = [
-                .init(id: "com.example.product.weekly", displayName: "Weekly", description: "Best Offer", price: 0.99, displayPrice: "$0.99", type: .nonConsumable),
-                .init(id: "com.example.product.monthly", displayName: "Monthly", description: "Best Value", price: 1.99, displayPrice: "$1.99", type: .nonConsumable),
-                .init(id: "com.example.product.yearly", displayName: "Yearly", description: "Best Deal", price: 9.99, displayPrice: "$9.99", type: .nonConsumable)
+                .init(
+                    id: "com.example.product.weekly",
+                    displayName: "Weekly",
+                    description: "Best Offer",
+                    price: 0.99,
+                    displayPrice: "$0.99",
+                    type: .autoRenewable,
+                    subscription: .init(
+                        subscriptionPeriod: .init(unit: .week, value: 1),
+                        introductoryOffer: .init(
+                            type: .introductory,
+                            period: .init(unit: .day, value: 3),
+                            periodCount: 1,
+                            price: 0,
+                            displayPrice: "Free",
+                            paymentMode: .freeTrial
+                        ),
+                        subscriptionGroupID: "premium_access"
+                    )
+                ),
+                .init(
+                    id: "com.example.product.monthly",
+                    displayName: "Monthly",
+                    description: "Best Value",
+                    price: 1.99,
+                    displayPrice: "$1.99",
+                    type: .autoRenewable,
+                    subscription: .init(
+                        subscriptionPeriod: .init(unit: .month, value: 1),
+                        subscriptionGroupID: "premium_access"
+                    )
+                ),
+                .init(
+                    id: "com.example.product.yearly",
+                    displayName: "Yearly",
+                    description: "Best Deal",
+                    price: 9.99,
+                    displayPrice: "$9.99",
+                    type: .autoRenewable,
+                    subscription: .init(
+                        subscriptionPeriod: .init(unit: .year, value: 1),
+                        subscriptionGroupID: "premium_access"
+                    )
+                )
             ]
             return products
         },
@@ -91,24 +134,38 @@ extension StoreKitClient {
             return .init(rawValue: nil)
         },
         restorePurchases: { [] },
-        getLatestTransaction: { .mockSubscription }
+        getLatestTransaction: { .mockSubscription },
+        isEligibleForIntroOffer: { _ in true }
     )
 
     /// A mock with active subscription restoration.
     ///
     /// Simulates a user with an active subscription that can be restored.
+    /// Not eligible for intro offer (already subscribed).
     public static let withActiveSubscription = Self(
         receiptURL: { nil },
         canMakePayments: { true },
         loadProducts: { _ in
-            [.init(id: "com.example.premium", displayName: "Premium", description: "Premium subscription", price: 9.99, displayPrice: "$9.99", type: .autoRenewable)]
+            [.init(
+                id: "com.example.premium",
+                displayName: "Premium",
+                description: "Premium subscription",
+                price: 9.99,
+                displayPrice: "$9.99",
+                type: .autoRenewable,
+                subscription: .init(
+                    subscriptionPeriod: .init(unit: .week, value: 1),
+                    subscriptionGroupID: "premium_access"
+                )
+            )]
         },
         processUnfinishedConsumables: { _ in },
         observeTransactions: { .never },
         requestReview: { },
         purchase: { _ in .mockSubscription },
         restorePurchases: { [.mockSubscription] },
-        getLatestTransaction: { .mockSubscription }
+        getLatestTransaction: { .mockSubscription },
+        isEligibleForIntroOffer: { _ in false }
     )
 
     /// A mock that simulates consumable purchases.
@@ -127,7 +184,8 @@ extension StoreKitClient {
         requestReview: { },
         purchase: { _ in .mockConsumable },
         restorePurchases: { [] },
-        getLatestTransaction: { nil }
+        getLatestTransaction: { nil },
+        isEligibleForIntroOffer: { _ in false }
     )
 
     /// A mock that emits transaction updates.
@@ -152,6 +210,7 @@ extension StoreKitClient {
         requestReview: { },
         purchase: { _ in .mockSubscription },
         restorePurchases: { [] },
-        getLatestTransaction: { .mockSubscription }
+        getLatestTransaction: { .mockSubscription },
+        isEligibleForIntroOffer: { _ in false }
     )
 }

@@ -41,6 +41,9 @@ extension StoreKitClient: DependencyKey {
             },
             getLatestTransaction: {
                 await actor.getLatestTransaction()
+            },
+            isEligibleForIntroOffer: { groupID in
+                await actor.isEligibleForIntroOffer(groupID: groupID)
             }
         )
     }()

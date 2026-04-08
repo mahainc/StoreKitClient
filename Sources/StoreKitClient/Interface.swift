@@ -107,4 +107,13 @@ public struct StoreKitClient: Sendable {
     ///
     /// - Returns: The transaction with the latest expiration date, or `nil` if no transactions exist.
     public var getLatestTransaction: @Sendable () async -> StoreKitClient.Transaction?
+
+    /// Checks whether the user is eligible for an introductory offer in the given subscription group.
+    ///
+    /// Use this to determine whether to show "Free Trial" messaging on your paywall.
+    /// A user is eligible only if they've never had a subscription in the group.
+    ///
+    /// - Parameter groupID: The subscription group identifier from App Store Connect.
+    /// - Returns: `true` if the user is eligible for the introductory offer.
+    public var isEligibleForIntroOffer: @Sendable (_ groupID: String) async -> Bool = { _ in false }
 }

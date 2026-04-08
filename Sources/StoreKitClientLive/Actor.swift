@@ -141,6 +141,10 @@ actor StoreKitLiveActor {
         return restored
     }
     
+    func isEligibleForIntroOffer(groupID: String) async -> Bool {
+        await StoreKit.Product.SubscriptionInfo.isEligibleForIntroOffer(for: groupID)
+    }
+
     func getLatestTransaction() async -> StoreKitClient.Transaction? {
         var latestTransaction: Transaction?
         

@@ -17,23 +17,51 @@ extension StoreKitClient.Product {
         self.price = rawValue.price
         self.displayPrice = rawValue.displayPrice
         self.type = rawValue.type
-        if let period = rawValue.subscription?.subscriptionPeriod {
-            self.subscriptionPeriod = StoreKitClient.SubscriptionPeriod(
-                unit: period.unit.toClientUnit,
-                value: period.value
+        self.subscription = rawValue.subscription.map { sub in
+            StoreKitClient.SubscriptionInfo(
+                subscriptionPeriod: StoreKitClient.SubscriptionPeriod(rawValue: sub.subscriptionPeriod),
+                introductoryOffer: sub.introductoryOffer.map { StoreKitClient.SubscriptionOffer(rawValue: $0) },
+                subscriptionGroupID: sub.subscriptionGroupID
             )
         }
     }
 }
 
-extension StoreKit.Product.SubscriptionPeriod.Unit {
-    var toClientUnit: StoreKitClient.SubscriptionPeriod.Unit {
-        switch self {
-        case .day: return .day
-        case .week: return .week
-        case .month: return .month
-        case .year: return .year
-        @unknown default: return .month
+// MARK: - StoreKitClient.SubscriptionPeriod mapping
+
+extension StoreKitClient.SubscriptionPeriod {
+    public init(rawValue: StoreKit.Product.SubscriptionPeriod) {
+        self.value = rawValue.value
+        switch rawValue.unit {
+        case .day:   self.unit = .day
+        case .week:  self.unit = .week
+        case .month: self.unit = .month
+        case .year:  self.unit = .year
+        @unknown default: self.unit = .month
+        }
+    }
+}
+
+// MARK: - StoreKitClient.SubscriptionOffer mapping
+
+extension StoreKitClient.SubscriptionOffer {
+    public init(rawValue: StoreKit.Product.SubscriptionOffer) {
+        self.period = StoreKitClient.SubscriptionPeriod(rawValue: rawValue.period)
+        self.periodCount = rawValue.periodCount
+        self.price = rawValue.price
+        self.displayPrice = rawValue.displayPrice
+
+        switch rawValue.type {
+        case .introductory: self.type = .introductory
+        case .promotional:  self.type = .promotional
+        default:            self.type = .introductory
+        }
+
+        switch rawValue.paymentMode {
+        case .freeTrial:   self.paymentMode = .freeTrial
+        case .payUpFront:  self.paymentMode = .payUpFront
+        case .payAsYouGo:  self.paymentMode = .payAsYouGo
+        default:           self.paymentMode = .freeTrial
         }
     }
 }
