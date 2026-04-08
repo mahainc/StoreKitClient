@@ -192,6 +192,18 @@ extension StoreKitClient {
     }
 }
 
+// MARK: - StoreKitClient.TransactionEnvironment
+
+extension StoreKitClient {
+    /// The environment in which a transaction was made.
+    public enum TransactionEnvironment: String, Sendable, Equatable {
+        case sandbox
+        case production
+        case xcode
+        case unknown
+    }
+}
+
 // MARK: - StoreKitClient.Transaction
 
 extension StoreKitClient {
@@ -231,6 +243,21 @@ extension StoreKitClient {
 
         /// Whether this transaction was purchased with a free trial.
         public var isFreeTrial: Bool { offerType == .introductory }
+
+        /// The environment in which this transaction was made.
+        public var environment: TransactionEnvironment {
+            guard let rawValue else { return .unknown }
+            if #available(iOS 16.0, macOS 13.0, *) {
+                return switch rawValue.environment {
+                case .sandbox: .sandbox
+                case .production: .production
+                case .xcode: .xcode
+                default: .unknown
+                }
+            } else {
+                return .unknown
+            }
+        }
 
         /// The localized, formatted price string for this transaction.
         ///
