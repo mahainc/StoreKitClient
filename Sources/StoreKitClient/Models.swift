@@ -117,6 +117,19 @@ extension StoreKitClient {
             case (.year, let v): return "\(v) years"
             }
         }
+
+        /// Approximate duration in days using fixed conversions (week=7, month=30, year=365).
+        ///
+        /// Useful for displaying free-trial length when the unit isn't already days.
+        /// For calendar-accurate duration, compute from a reference date instead.
+        public var approximateDays: Int {
+            switch unit {
+            case .day:   return value
+            case .week:  return value * 7
+            case .month: return value * 30
+            case .year:  return value * 365
+            }
+        }
     }
 }
 
@@ -128,10 +141,16 @@ extension StoreKitClient {
         /// The type of offer.
         public var type: OfferType
 
-        /// The offer's duration period.
+        /// The unit period of the offer (e.g., `P3D` = 3 days).
+        ///
+        /// This is one repeat of the offer, not its total length.
+        /// Use ``totalPeriod`` for the full duration.
         public var period: SubscriptionPeriod
 
-        /// The number of periods the offer lasts.
+        /// How many times the unit ``period`` repeats.
+        ///
+        /// For example, a 6-day free trial may be expressed as
+        /// `period = P3D, periodCount = 2`.
         public var periodCount: Int
 
         /// The offer price (0 for free trials).
@@ -178,13 +197,21 @@ extension StoreKitClient {
             paymentMode == .freeTrial
         }
 
-        /// Human-readable offer description (e.g., "3-day free trial").
+        /// The total offer duration (`period` × `periodCount`).
+        ///
+        /// StoreKit splits an offer into a unit period and a repeat count
+        /// (e.g., `P3D × 2` = 6 days). Use this to get the combined span.
+        public var totalPeriod: SubscriptionPeriod {
+            SubscriptionPeriod(unit: period.unit, value: period.value * periodCount)
+        }
+
+        /// Human-readable offer description (e.g., "3 days free trial").
         public var displayDescription: String {
             switch paymentMode {
             case .freeTrial:
-                return "\(period.displayDescription) free trial"
+                return "\(totalPeriod.displayDescription) free trial"
             case .payUpFront:
-                return "\(displayPrice) for \(period.displayDescription)"
+                return "\(displayPrice) for \(totalPeriod.displayDescription)"
             case .payAsYouGo:
                 return "\(displayPrice)/\(period.unit.rawValue) for \(periodCount) \(period.unit.rawValue)\(periodCount > 1 ? "s" : "")"
             }
