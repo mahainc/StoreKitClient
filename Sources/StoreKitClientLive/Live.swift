@@ -5,7 +5,7 @@
 //  Created by Thanh Hai Khong on 27/3/25.
 //
 
-import ComposableArchitecture
+import Dependencies
 import StoreKitClient
 import StoreKit
 
