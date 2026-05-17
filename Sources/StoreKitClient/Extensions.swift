@@ -16,6 +16,7 @@ extension StoreKitClient.Product {
         self.description = rawValue.description
         self.price = rawValue.price
         self.displayPrice = rawValue.displayPrice
+        self.priceFormatStyle = rawValue.priceFormatStyle
         self.type = rawValue.type
         self.subscription = rawValue.subscription.map { sub in
             StoreKitClient.SubscriptionInfo(

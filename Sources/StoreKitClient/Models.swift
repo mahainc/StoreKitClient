@@ -32,6 +32,13 @@ extension StoreKitClient {
         /// The localized, formatted price string (e.g., "$9.99").
         public var displayPrice: String
 
+        /// Format style carried over from `StoreKit.Product.priceFormatStyle`.
+        /// Use this to format any derived `Decimal` (e.g. per-week equivalent
+        /// of an annual subscription) so the currency code and locale-specific
+        /// separators match `displayPrice` exactly — instead of guessing from
+        /// `Locale.current`, which can disagree with the App Store storefront.
+        public var priceFormatStyle: Decimal.FormatStyle.Currency
+
         /// The type of product (consumable, non-consumable, subscription, etc.).
         public var type: StoreKit.Product.ProductType
 
@@ -44,6 +51,7 @@ extension StoreKitClient {
             description: String,
             price: Decimal,
             displayPrice: String,
+            priceFormatStyle: Decimal.FormatStyle.Currency = .init(code: "USD"),
             type: StoreKit.Product.ProductType,
             subscription: SubscriptionInfo? = nil
         ) {
@@ -52,6 +60,7 @@ extension StoreKitClient {
             self.description = description
             self.price = price
             self.displayPrice = displayPrice
+            self.priceFormatStyle = priceFormatStyle
             self.type = type
             self.subscription = subscription
         }
