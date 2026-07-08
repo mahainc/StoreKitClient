@@ -6,8 +6,8 @@
 //
 
 import Dependencies
-import StoreKitClient
 import StoreKit
+import StoreKitClient
 
 @available(iOSApplicationExtension, unavailable)
 @available(iOS 15.0, *)
@@ -44,6 +44,12 @@ extension StoreKitClient: DependencyKey {
             },
             isEligibleForIntroOffer: { groupID in
                 await actor.isEligibleForIntroOffer(groupID: groupID)
+            },
+            currentSubscriptionStatus: { groupID in
+                await actor.currentSubscriptionStatus(groupID: groupID)
+            },
+            observeSubscriptionStatus: { groupID in
+                await actor.observeSubscriptionStatus(groupID: groupID)
             }
         )
     }()

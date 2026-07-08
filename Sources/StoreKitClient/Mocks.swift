@@ -43,15 +43,17 @@ extension StoreKitClient {
         loadProducts: { _ in try await Task.never() },
         processUnfinishedConsumables: { _ in },
         observeTransactions: { .never },
-        requestReview: { },
+        requestReview: {},
         purchase: { _ in
             .init(rawValue: nil)
         },
         restorePurchases: { [] },
         getLatestTransaction: { nil },
-        isEligibleForIntroOffer: { _ in false }
+        isEligibleForIntroOffer: { _ in false },
+        currentSubscriptionStatus: { _ in [] },
+        observeSubscriptionStatus: { _ in .finished }
     )
-    
+
     /// A failing implementation that throws errors for operations.
     ///
     /// Useful for testing error handling paths in your code.
@@ -61,15 +63,17 @@ extension StoreKitClient {
         loadProducts: { _ in throw URLError(.badServerResponse) },
         processUnfinishedConsumables: { _ in },
         observeTransactions: { .never },
-        requestReview: { },
+        requestReview: {},
         purchase: { _ in
             throw URLError(.badServerResponse)
         },
         restorePurchases: { [] },
         getLatestTransaction: { nil },
-        isEligibleForIntroOffer: { _ in false }
+        isEligibleForIntroOffer: { _ in false },
+        currentSubscriptionStatus: { _ in [] },
+        observeSubscriptionStatus: { _ in .finished }
     )
-    
+
     /// A successful implementation with mock products and transactions.
     ///
     /// Returns three mock subscription products (weekly with 3-day trial, monthly, yearly)
@@ -122,20 +126,31 @@ extension StoreKitClient {
                         subscriptionPeriod: .init(unit: .year, value: 1),
                         subscriptionGroupID: "premium_access"
                     )
-                )
+                ),
             ]
             return products
         },
         processUnfinishedConsumables: { _ in },
         observeTransactions: { .never },
-        requestReview: { },
+        requestReview: {},
         purchase: { _ in
             try await Task.sleep(nanoseconds: MockConstants.purchaseDelayNanoseconds)
             return .init(rawValue: nil)
         },
         restorePurchases: { [] },
         getLatestTransaction: { .mockSubscription },
-        isEligibleForIntroOffer: { _ in true }
+        isEligibleForIntroOffer: { _ in true },
+        currentSubscriptionStatus: { groupID in
+            [.init(state: .subscribed, productID: "com.example.product.weekly", groupID: groupID)]
+        },
+        observeSubscriptionStatus: { groupID in
+            AsyncStream { continuation in
+                continuation.yield([
+                    .init(state: .subscribed, productID: "com.example.product.weekly", groupID: groupID)
+                ])
+                continuation.finish()
+            }
+        }
     )
 
     /// A mock with active subscription restoration.
@@ -146,26 +161,78 @@ extension StoreKitClient {
         receiptURL: { nil },
         canMakePayments: { true },
         loadProducts: { _ in
-            [.init(
-                id: "com.example.premium",
-                displayName: "Premium",
-                description: "Premium subscription",
-                price: 9.99,
-                displayPrice: "$9.99",
-                type: .autoRenewable,
-                subscription: .init(
-                    subscriptionPeriod: .init(unit: .week, value: 1),
-                    subscriptionGroupID: "premium_access"
+            [
+                .init(
+                    id: "com.example.premium",
+                    displayName: "Premium",
+                    description: "Premium subscription",
+                    price: 9.99,
+                    displayPrice: "$9.99",
+                    type: .autoRenewable,
+                    subscription: .init(
+                        subscriptionPeriod: .init(unit: .week, value: 1),
+                        subscriptionGroupID: "premium_access"
+                    )
                 )
-            )]
+            ]
         },
         processUnfinishedConsumables: { _ in },
         observeTransactions: { .never },
-        requestReview: { },
+        requestReview: {},
         purchase: { _ in .mockSubscription },
         restorePurchases: { [.mockSubscription] },
         getLatestTransaction: { .mockSubscription },
-        isEligibleForIntroOffer: { _ in false }
+        isEligibleForIntroOffer: { _ in false },
+        currentSubscriptionStatus: { groupID in
+            [.init(state: .subscribed, productID: "com.example.premium", groupID: groupID)]
+        },
+        observeSubscriptionStatus: { groupID in
+            AsyncStream { continuation in
+                continuation.yield([.init(state: .subscribed, productID: "com.example.premium", groupID: groupID)])
+                continuation.finish()
+            }
+        }
+    )
+
+    /// A mock with an expired subscription (e.g. a free trial that lapsed).
+    ///
+    /// Reports an `.expired` status (`isActive == false`) so consumers can verify they
+    /// downgrade the user when a trial ends. Not eligible for a new intro offer.
+    public static let withExpiredSubscription = Self(
+        receiptURL: { nil },
+        canMakePayments: { true },
+        loadProducts: { _ in
+            [
+                .init(
+                    id: "com.example.premium",
+                    displayName: "Premium",
+                    description: "Premium subscription",
+                    price: 9.99,
+                    displayPrice: "$9.99",
+                    type: .autoRenewable,
+                    subscription: .init(
+                        subscriptionPeriod: .init(unit: .week, value: 1),
+                        subscriptionGroupID: "premium_access"
+                    )
+                )
+            ]
+        },
+        processUnfinishedConsumables: { _ in },
+        observeTransactions: { .never },
+        requestReview: {},
+        purchase: { _ in .mockExpiredSubscription },
+        restorePurchases: { [] },
+        getLatestTransaction: { nil },
+        isEligibleForIntroOffer: { _ in false },
+        currentSubscriptionStatus: { groupID in
+            [.init(state: .expired, productID: "com.example.premium", groupID: groupID)]
+        },
+        observeSubscriptionStatus: { groupID in
+            AsyncStream { continuation in
+                continuation.yield([.init(state: .expired, productID: "com.example.premium", groupID: groupID)])
+                continuation.finish()
+            }
+        }
     )
 
     /// A mock that simulates consumable purchases.
@@ -175,17 +242,28 @@ extension StoreKitClient {
         receiptURL: { nil },
         canMakePayments: { true },
         loadProducts: { _ in
-            [.init(id: "com.example.coins100", displayName: "100 Coins", description: "100 game coins", price: 0.99, displayPrice: "$0.99", type: .consumable)]
+            [
+                .init(
+                    id: "com.example.coins100",
+                    displayName: "100 Coins",
+                    description: "100 game coins",
+                    price: 0.99,
+                    displayPrice: "$0.99",
+                    type: .consumable
+                )
+            ]
         },
         processUnfinishedConsumables: { handler in
             try? await handler(.mockConsumable)
         },
         observeTransactions: { .never },
-        requestReview: { },
+        requestReview: {},
         purchase: { _ in .mockConsumable },
         restorePurchases: { [] },
         getLatestTransaction: { nil },
-        isEligibleForIntroOffer: { _ in false }
+        isEligibleForIntroOffer: { _ in false },
+        currentSubscriptionStatus: { _ in [] },
+        observeSubscriptionStatus: { _ in .finished }
     )
 
     /// A mock that emits transaction updates.
@@ -207,10 +285,21 @@ extension StoreKitClient {
                 }
             }
         },
-        requestReview: { },
+        requestReview: {},
         purchase: { _ in .mockSubscription },
         restorePurchases: { [] },
         getLatestTransaction: { .mockSubscription },
-        isEligibleForIntroOffer: { _ in false }
+        isEligibleForIntroOffer: { _ in false },
+        currentSubscriptionStatus: { groupID in
+            [.init(state: .subscribed, productID: "com.example.product.weekly", groupID: groupID)]
+        },
+        observeSubscriptionStatus: { groupID in
+            AsyncStream { continuation in
+                continuation.yield([
+                    .init(state: .subscribed, productID: "com.example.product.weekly", groupID: groupID)
+                ])
+                continuation.finish()
+            }
+        }
     )
 }

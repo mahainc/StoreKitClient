@@ -5,8 +5,8 @@
 //  Created by Thanh Hai Khong on 27/3/25.
 //
 
-import Foundation
 import CasePaths
+import Foundation
 import StoreKit
 
 // MARK: - StoreKitClient.Product
@@ -104,7 +104,10 @@ extension StoreKitClient {
         /// The number of units per period (e.g., 1 week, 3 days).
         public var value: Int
 
-        public init(unit: Unit, value: Int) {
+        public init(
+            unit: Unit,
+            value: Int
+        ) {
             self.unit = unit
             self.value = value
         }
@@ -116,14 +119,14 @@ extension StoreKitClient {
         /// Human-readable period description (e.g., "1 week", "3 days").
         public var displayDescription: String {
             switch (unit, value) {
-            case (.day, 1): return "1 day"
-            case (.day, let v): return "\(v) days"
-            case (.week, 1): return "1 week"
-            case (.week, let v): return "\(v) weeks"
-            case (.month, 1): return "1 month"
-            case (.month, let v): return "\(v) months"
-            case (.year, 1): return "1 year"
-            case (.year, let v): return "\(v) years"
+                case (.day, 1): return "1 day"
+                case (.day, let v): return "\(v) days"
+                case (.week, 1): return "1 week"
+                case (.week, let v): return "\(v) weeks"
+                case (.month, 1): return "1 month"
+                case (.month, let v): return "\(v) months"
+                case (.year, 1): return "1 year"
+                case (.year, let v): return "\(v) years"
             }
         }
 
@@ -133,10 +136,10 @@ extension StoreKitClient {
         /// For calendar-accurate duration, compute from a reference date instead.
         public var approximateDays: Int {
             switch unit {
-            case .day:   return value
-            case .week:  return value * 7
-            case .month: return value * 30
-            case .year:  return value * 365
+                case .day: return value
+                case .week: return value * 7
+                case .month: return value * 30
+                case .year: return value * 365
             }
         }
     }
@@ -217,12 +220,13 @@ extension StoreKitClient {
         /// Human-readable offer description (e.g., "3 days free trial").
         public var displayDescription: String {
             switch paymentMode {
-            case .freeTrial:
-                return "\(totalPeriod.displayDescription) free trial"
-            case .payUpFront:
-                return "\(displayPrice) for \(totalPeriod.displayDescription)"
-            case .payAsYouGo:
-                return "\(displayPrice)/\(period.unit.rawValue) for \(periodCount) \(period.unit.rawValue)\(periodCount > 1 ? "s" : "")"
+                case .freeTrial:
+                    return "\(totalPeriod.displayDescription) free trial"
+                case .payUpFront:
+                    return "\(displayPrice) for \(totalPeriod.displayDescription)"
+                case .payAsYouGo:
+                    return
+                        "\(displayPrice)/\(period.unit.rawValue) for \(periodCount) \(period.unit.rawValue)\(periodCount > 1 ? "s" : "")"
             }
         }
     }
@@ -285,10 +289,10 @@ extension StoreKitClient {
             guard let rawValue else { return .unknown }
             if #available(iOS 16.0, macOS 13.0, *) {
                 return switch rawValue.environment {
-                case .sandbox: .sandbox
-                case .production: .production
-                case .xcode: .xcode
-                default: .unknown
+                    case .sandbox: .sandbox
+                    case .production: .production
+                    case .xcode: .xcode
+                    default: .unknown
                 }
             } else {
                 return .unknown
@@ -345,6 +349,73 @@ extension StoreKitClient {
     }
 }
 
+// MARK: - StoreKitClient.SubscriptionStatus
+
+extension StoreKitClient {
+    /// A snapshot of a subscription's renewal status within a subscription group.
+    ///
+    /// Mapped from `StoreKit.Product.SubscriptionInfo.Status`, this is the canonical
+    /// signal for whether a subscription (or free trial) is still active. Unlike a raw
+    /// transaction, it reflects natural expiration: when a trial lapses without renewal,
+    /// the state becomes ``RenewalState/expired`` and ``isActive`` becomes `false`.
+    public struct SubscriptionStatus: Equatable, Sendable, Hashable {
+        /// The renewal state reported by StoreKit.
+        public var state: RenewalState
+
+        /// The product identifier of the transaction backing this status.
+        public var productID: String
+
+        /// The subscription group identifier this status belongs to.
+        public var groupID: String
+
+        /// The expiration date of the backing transaction, if any.
+        public var expirationDate: Date?
+
+        public init(
+            state: RenewalState,
+            productID: String,
+            groupID: String,
+            expirationDate: Date? = nil
+        ) {
+            self.state = state
+            self.productID = productID
+            self.groupID = groupID
+            self.expirationDate = expirationDate
+        }
+
+        /// Whether this subscription currently grants entitlement.
+        ///
+        /// `true` for ``RenewalState/subscribed``, ``RenewalState/inGracePeriod``, and
+        /// ``RenewalState/inBillingRetryPeriod`` (Apple still grants access during grace and
+        /// billing-retry). `false` for ``RenewalState/expired``, ``RenewalState/revoked``,
+        /// and ``RenewalState/unknown``.
+        public var isActive: Bool {
+            switch state {
+                case .subscribed, .inGracePeriod, .inBillingRetryPeriod:
+                    return true
+                case .expired, .revoked, .unknown:
+                    return false
+            }
+        }
+
+        /// The renewal state of a subscription, mirroring `Product.SubscriptionInfo.RenewalState`.
+        public enum RenewalState: String, Sendable, Hashable {
+            /// The subscription is active and will renew.
+            case subscribed
+            /// The subscription expired and did not renew (e.g. a free trial that lapsed).
+            case expired
+            /// Renewal failed and StoreKit is retrying billing; access is still granted.
+            case inBillingRetryPeriod
+            /// The subscription is in its grace period after a billing issue; access is still granted.
+            case inGracePeriod
+            /// The subscription was revoked (e.g. refund or family-sharing removal).
+            case revoked
+            /// The state could not be determined.
+            case unknown
+        }
+    }
+}
+
 // MARK: - StoreKitClient.TransactionEvent
 
 extension StoreKitClient {
@@ -358,7 +429,7 @@ extension StoreKitClient {
         case removed(StoreKitClient.Transaction)
 
         /// Transaction verification failed.
-		case verificationFailed(Swift.Error)
+        case verificationFailed(Swift.Error)
     }
 }
 
@@ -366,18 +437,18 @@ extension StoreKitClient {
 
 extension StoreKitClient {
     /// Errors that can occur during StoreKit operations.
-	public enum `Error`: Swift.Error, Sendable, LocalizedError {
+    public enum `Error`: Swift.Error, Sendable, LocalizedError {
         /// Failed to fetch products from the App Store.
         ///
         /// - Parameters:
         ///   - productIDs: The product identifiers that were requested.
         ///   - underlyingError: The error returned by StoreKit.
-		case fetchProductsFailed(productIDs: Set<String>, underlyingError: Swift.Error)
+        case fetchProductsFailed(productIDs: Set<String>, underlyingError: Swift.Error)
 
         /// The transaction failed verification.
         ///
         /// - Parameter error: The verification error.
-		case unverifiedTransaction(Swift.Error)
+        case unverifiedTransaction(Swift.Error)
 
         /// The user cancelled the purchase.
         case userCancelled
@@ -395,35 +466,37 @@ extension StoreKitClient {
 
         public var errorDescription: String? {
             switch self {
-            case .fetchProductsFailed(let productIDs, let underlyingError):
-                return "Failed to fetch products \(productIDs.joined(separator: ", ")): \(underlyingError.localizedDescription)"
-            case .unverifiedTransaction(let error):
-                return "Transaction verification failed: \(error.localizedDescription)"
-            case .userCancelled:
-                return "Purchase was cancelled by the user"
-            case .purchasePending:
-                return "Purchase is pending approval"
-            case .unknownPurchaseResult:
-                return "Purchase completed with an unknown result"
-            case .productNotFound(let productID):
-                return "Product '\(productID)' was not found in the App Store"
+                case .fetchProductsFailed(let productIDs, let underlyingError):
+                    return
+                        "Failed to fetch products \(productIDs.joined(separator: ", ")): \(underlyingError.localizedDescription)"
+                case .unverifiedTransaction(let error):
+                    return "Transaction verification failed: \(error.localizedDescription)"
+                case .userCancelled:
+                    return "Purchase was cancelled by the user"
+                case .purchasePending:
+                    return "Purchase is pending approval"
+                case .unknownPurchaseResult:
+                    return "Purchase completed with an unknown result"
+                case .productNotFound(let productID):
+                    return "Product '\(productID)' was not found in the App Store"
             }
         }
 
         public var recoverySuggestion: String? {
             switch self {
-            case .fetchProductsFailed:
-                return "Check your network connection and ensure the product IDs are registered in App Store Connect."
-            case .unverifiedTransaction:
-                return "The transaction could not be verified. Please try again."
-            case .userCancelled:
-                return nil
-            case .purchasePending:
-                return "The purchase requires parental approval. Please check back later."
-            case .unknownPurchaseResult:
-                return "Please contact support if you were charged but did not receive your purchase."
-            case .productNotFound:
-                return "Ensure the product ID is correct and registered in App Store Connect."
+                case .fetchProductsFailed:
+                    return
+                        "Check your network connection and ensure the product IDs are registered in App Store Connect."
+                case .unverifiedTransaction:
+                    return "The transaction could not be verified. Please try again."
+                case .userCancelled:
+                    return nil
+                case .purchasePending:
+                    return "The purchase requires parental approval. Please check back later."
+                case .unknownPurchaseResult:
+                    return "Please contact support if you were charged but did not receive your purchase."
+                case .productNotFound:
+                    return "Ensure the product ID is correct and registered in App Store Connect."
             }
         }
     }

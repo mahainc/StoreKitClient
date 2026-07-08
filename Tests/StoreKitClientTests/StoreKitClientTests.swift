@@ -5,8 +5,9 @@
 //  Created on 17/11/25.
 //
 
-import XCTest
 import Dependencies
+import XCTest
+
 @testable import StoreKitClient
 
 private final class CallCounter: @unchecked Sendable {
@@ -152,6 +153,64 @@ final class StoreKitClientTests: XCTestCase {
         XCTAssertNil(StoreKitClient.Transaction.mockConsumable.rawValue)
         XCTAssertNil(StoreKitClient.Transaction.mockSubscription.rawValue)
         XCTAssertNil(StoreKitClient.Transaction.mockExpiredSubscription.rawValue)
+    }
+
+    // MARK: - SubscriptionStatus Tests
+
+    func testSubscriptionStatusIsActive() {
+        let cases: [(StoreKitClient.SubscriptionStatus.RenewalState, Bool)] = [
+            (.subscribed, true),
+            (.inGracePeriod, true),
+            (.inBillingRetryPeriod, true),
+            (.expired, false),
+            (.revoked, false),
+            (.unknown, false),
+        ]
+
+        for (state, expectedActive) in cases {
+            let status = StoreKitClient.SubscriptionStatus(
+                state: state,
+                productID: "com.test.weekly",
+                groupID: "premium_access"
+            )
+            XCTAssertEqual(status.isActive, expectedActive, "Failed for state \(state)")
+        }
+    }
+
+    func testWithExpiredSubscriptionStatusIsNotActive() async {
+        await withDependencies {
+            $0.storeKitClient = .withExpiredSubscription
+        } operation: {
+            @Dependency(\.storeKitClient) var client
+            let statuses = await client.currentSubscriptionStatus("premium_access")
+            XCTAssertEqual(statuses.count, 1)
+            XCTAssertEqual(statuses.first?.state, .expired)
+            XCTAssertEqual(statuses.first?.isActive, false)
+        }
+    }
+
+    func testWithActiveSubscriptionStatusIsActive() async {
+        await withDependencies {
+            $0.storeKitClient = .withActiveSubscription
+        } operation: {
+            @Dependency(\.storeKitClient) var client
+            let statuses = await client.currentSubscriptionStatus("premium_access")
+            XCTAssertEqual(statuses.first?.isActive, true)
+        }
+    }
+
+    func testWithExpiredSubscriptionStreamEmitsExpired() async {
+        await withDependencies {
+            $0.storeKitClient = .withExpiredSubscription
+        } operation: {
+            @Dependency(\.storeKitClient) var client
+            let stream = await client.observeSubscriptionStatus("premium_access")
+            var received: [StoreKitClient.SubscriptionStatus] = []
+            for await statuses in stream {
+                received = statuses
+            }
+            XCTAssertEqual(received.first?.isActive, false)
+        }
     }
 
     // MARK: - TransactionEnvironment Tests

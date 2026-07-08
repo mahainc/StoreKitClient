@@ -61,7 +61,9 @@ public struct StoreKitClient: Sendable {
     ///
     /// - Parameter deliverConsumable: A closure called for each unfinished consumable transaction.
     ///   Throw an error if delivery fails to prevent marking the transaction as delivered.
-    public var processUnfinishedConsumables: @Sendable (_ deliverConsumable: @Sendable @escaping (StoreKitClient.Transaction) async throws -> Void) async -> Void
+    public var processUnfinishedConsumables:
+        @Sendable (_ deliverConsumable: @Sendable @escaping (StoreKitClient.Transaction) async throws -> Void) async ->
+            Void
 
     /// Observes transaction updates in real-time.
     ///
@@ -116,4 +118,32 @@ public struct StoreKitClient: Sendable {
     /// - Parameter groupID: The subscription group identifier from App Store Connect.
     /// - Returns: `true` if the user is eligible for the introductory offer.
     public var isEligibleForIntroOffer: @Sendable (_ groupID: String) async -> Bool = { _ in false }
+
+    /// Returns the current subscription status for every subscription in the given group.
+    ///
+    /// This is the canonical, expiration-aware way to know whether a subscription (or free
+    /// trial) is still active. Unlike ``getLatestTransaction`` — which returns a raw
+    /// transaction regardless of expiry — each ``StoreKitClient/SubscriptionStatus`` reflects
+    /// natural lapse: a trial that ended without renewal reports ``StoreKitClient/SubscriptionStatus/RenewalState/expired``
+    /// and ``StoreKitClient/SubscriptionStatus/isActive`` `false`.
+    ///
+    /// Call this on app launch and on foreground resume to catch expirations that happened
+    /// while the app was not running (StoreKit emits no live update for a plain expiry).
+    ///
+    /// - Parameter groupID: The subscription group identifier from App Store Connect.
+    /// - Returns: The status of each subscription in the group. Empty if the user never subscribed.
+    public var currentSubscriptionStatus: @Sendable (_ groupID: String) async -> [SubscriptionStatus] = { _ in [] }
+
+    /// Observes subscription-status changes for the given group in real time.
+    ///
+    /// Emits an initial snapshot immediately, then a fresh status array whenever StoreKit
+    /// reports a transaction change (renewal, expiration, revocation, upgrade). Subscribe to
+    /// this to downgrade a user the moment their trial or subscription lapses while the app
+    /// is running.
+    ///
+    /// - Parameter groupID: The subscription group identifier from App Store Connect.
+    /// - Returns: An `AsyncStream` emitting the group's status whenever it changes.
+    public var observeSubscriptionStatus: @Sendable (_ groupID: String) async -> AsyncStream<[SubscriptionStatus]> = {
+        _ in .finished
+    }
 }
