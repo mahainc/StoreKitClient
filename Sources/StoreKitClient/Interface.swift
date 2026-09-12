@@ -82,19 +82,84 @@ public struct StoreKitClient: Sendable {
     /// - Note: The system controls the frequency of review prompts.
     public var requestReview: @Sendable () async -> Void
 
-    /// Initiates a purchase for the specified product.
+    /// Buys a non-consumable — a permanent, one-time unlock such as "remove ads".
     ///
     /// This method handles the complete purchase flow including verification
-    /// of the transaction.
+    /// of the transaction, and finishes it before returning: the App Store owns the
+    /// entitlement from here on, so there is nothing left to deliver.
     ///
-    /// - Parameter productID: The identifier of the product to purchase.
+    /// A permanent unlock is not a subscription and not a credit pack — use ``subscribe``
+    /// or ``purchaseConsumable`` for those. StoreKit's own product type decides, so handing
+    /// this the wrong kind of product throws rather than charging for the wrong thing.
+    ///
+    /// - Parameter productID: A non-consumable product. Any other type throws `productTypeMismatch`.
     /// - Returns: A verified transaction for the purchase.
     /// - Throws:
     ///   - `StoreClientError.productNotFound` if the product doesn't exist
+    ///   - `StoreClientError.productTypeMismatch` if the product is not a non-consumable
     ///   - `StoreClientError.userCancelled` if the user cancels the purchase
     ///   - `StoreClientError.purchasePending` if the purchase requires parental approval
     ///   - `StoreClientError.unverifiedTransaction` if verification fails
     public var purchase: @Sendable (_ productID: String) async throws -> StoreKitClient.Transaction
+
+    /// Buys a subscription — auto-renewable or non-renewing — and finishes it before returning.
+    ///
+    /// Nothing is deferred, because the App Store, not a server of yours, decides whether the
+    /// subscription still entitles the user; read that back with ``currentSubscriptionStatus``
+    /// rather than from the transaction this returns.
+    ///
+    /// - Parameter productID: An auto-renewable or non-renewing product. Any other type throws
+    ///   `productTypeMismatch`.
+    /// - Returns: A verified transaction for the purchase.
+    /// - Throws:
+    ///   - `StoreClientError.productNotFound` if the product doesn't exist
+    ///   - `StoreClientError.productTypeMismatch` if the product is not a subscription
+    ///   - `StoreClientError.userCancelled` if the user cancels the purchase
+    ///   - `StoreClientError.purchasePending` if the purchase requires parental approval
+    ///   - `StoreClientError.unverifiedTransaction` if verification fails
+    public var subscribe: @Sendable (_ productID: String) async throws -> StoreKitClient.Transaction
+
+    /// Buys a consumable, holding the transaction open until `verify` succeeds.
+    ///
+    /// Use this for anything whose value is granted by a server — credit packs, coin bundles.
+    /// `finish()` is what stops StoreKit re-delivering a transaction, so it is called only
+    /// after `verify` returns. If `verify` throws, the transaction is left **unfinished** on
+    /// purpose and StoreKit hands it back on a later launch, where `redeliveryListener(verify:)`
+    /// retries it — a transient backend failure must not cost the user a paid grant.
+    ///
+    /// - Parameters:
+    ///   - productID: A consumable product. Any other type throws `productTypeMismatch`.
+    ///   - appAccountToken: Ties the purchase to your own account identity in App Store Server
+    ///     notifications. Pass `nil` if the backend does not need it.
+    ///   - verify: Records the grant. Throwing keeps the transaction alive for a retry.
+    public var purchaseConsumable:
+        @Sendable (
+            _ productID: String,
+            _ appAccountToken: UUID?,
+            _ verify: @Sendable @escaping (StoreKitClient.Transaction) async throws -> Void
+        ) async throws -> StoreKitClient.Transaction
+
+    /// Starts a long-lived listener that re-verifies consumables StoreKit re-delivers.
+    ///
+    /// Covers the purchase that was paid for but never granted, because the app died between
+    /// the purchase and the verifier's reply. Same contract as `purchaseConsumable`: a failed
+    /// verify leaves the transaction unfinished so it returns again.
+    ///
+    /// - Returns: The listener task. Cancel it to stop listening; it never finishes on its own.
+    public var redeliveryListener:
+        @Sendable (_ verify: @Sendable @escaping (StoreKitClient.Transaction) async throws -> Void) -> Task<
+            Void, Never
+        > = { _ in Task {} }
+
+    /// Asks the App Store to refresh this device's transaction records.
+    ///
+    /// Call it before ``restorePurchases`` on an explicit "Restore Purchases" tap and nowhere
+    /// else: it can present a sign-in prompt, which is hostile on launch. It is separate from
+    /// ``restorePurchases`` so that a refusal to sign in — or a network failure — surfaces as a
+    /// thrown error rather than as an empty list that reads like "you never bought anything".
+    ///
+    /// - Throws: Whatever StoreKit reports, typically a cancelled or failed authentication.
+    public var syncAppStore: @Sendable () async throws -> Void = {}
 
     /// Restores previously purchased products.
     ///

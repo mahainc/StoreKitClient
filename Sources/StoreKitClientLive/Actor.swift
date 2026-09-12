@@ -9,7 +9,7 @@ import StoreKit
 import StoreKitClient
 
 #if canImport(UIKit)
-    import UIKit
+import UIKit
 #endif
 
 // MARK: - UserDefaults Keys
@@ -34,7 +34,7 @@ actor StoreKitLiveActor {
         userDefaults: UserDefaults = .standard,
         logger: @escaping (String) -> Void = { message in
             #if DEBUG
-                print("🛍️ [STORE_KIT_LIVE_ACTOR]: \(message)")
+            print("🛍️ [STORE_KIT_LIVE_ACTOR]: \(message)")
             #endif
         }
     ) {
@@ -46,7 +46,7 @@ actor StoreKitLiveActor {
                 switch update {
                     case .verified(let transaction):
                         #if DEBUG
-                            print("🛍️ [STORE_KIT_LIVE_ACTOR]: Transaction update received: \(transaction.productID)")
+                        print("🛍️ [STORE_KIT_LIVE_ACTOR]: Transaction update received: \(transaction.productID)")
                         #endif
                         // Finish the transaction for non-consumables and non-renewable subscriptions
                         // Consumables will be finished after delivery in processUnfinishedConsumables
@@ -55,7 +55,7 @@ actor StoreKitLiveActor {
                         }
                     case .unverified(_, let error):
                         #if DEBUG
-                            print("🛍️ [STORE_KIT_LIVE_ACTOR]: Unverified transaction update: \(error)")
+                        print("🛍️ [STORE_KIT_LIVE_ACTOR]: Unverified transaction update: \(error)")
                         #endif
                 }
             }
@@ -110,26 +110,158 @@ actor StoreKitLiveActor {
 
     func requestReview() async {
         #if canImport(UIKit) && !os(watchOS)
-            guard let windowScene = await currentWindowScene() else {
-                logger("No window scene found for review request")
-                return
-            }
-            if #available(iOS 16.0, *) {
-                await AppStore.requestReview(in: windowScene)
-            } else {
-                await SKStoreReviewController.requestReview(in: windowScene)
-            }
+        guard let windowScene = await currentWindowScene() else {
+            logger("No window scene found for review request")
+            return
+        }
+        if #available(iOS 16.0, *) {
+            await AppStore.requestReview(in: windowScene)
+        } else {
+            await SKStoreReviewController.requestReview(in: windowScene)
+        }
         #else
-            logger("Review request not supported on this platform")
+        logger("Review request not supported on this platform")
         #endif
     }
 
+    /// Buys a non-consumable — a permanent unlock — and finishes it immediately.
+    ///
+    /// There is nothing to defer: the App Store keeps the entitlement, so no server has to
+    /// record anything before the transaction may be closed.
     func purchase(productID: String) async throws -> StoreKitClient.Transaction {
+        try await buyAndFinish(
+            productID: productID,
+            accepting: PurchaseEntryPoint.nonConsumable,
+            expected: .nonConsumable
+        )
+    }
+
+    /// Buys a subscription — auto-renewable or non-renewing — and finishes it immediately.
+    ///
+    /// Also nothing to defer, and for the same reason. Whether the subscription still entitles
+    /// the user is a question for `currentSubscriptionStatus(groupID:)`, not for the
+    /// transaction this returns: a subscription lapses on its own, silently.
+    func subscribe(productID: String) async throws -> StoreKitClient.Transaction {
+        try await buyAndFinish(
+            productID: productID,
+            accepting: PurchaseEntryPoint.subscription,
+            expected: .autoRenewable
+        )
+    }
+
+    /// Asks the App Store to refresh this device's transaction records.
+    ///
+    /// Kept apart from `restorePurchases()` because it can fail in a way the caller must see:
+    /// folding it in would report a user who declined the sign-in prompt as a user who has
+    /// nothing to restore.
+    func syncAppStore() async throws {
+        do {
+            try await AppStore.sync()
+            logger("AppStore.sync() completed")
+        } catch {
+            logger("AppStore.sync() failed: \(error)")
+            throw error
+        }
+    }
+
+    /// The buy-and-close path the two non-deferred entry points share.
+    private func buyAndFinish(
+        productID: String,
+        accepting: Set<StoreKit.Product.ProductType>,
+        expected: StoreKit.Product.ProductType
+    ) async throws -> StoreKitClient.Transaction {
         let product = try await fetchOrGetCachedProduct(for: productID)
+        try requireProductType(
+            product.type,
+            productID: productID,
+            accepting: accepting,
+            expected: expected
+        )
         let purchaseResult = try await product.purchase()
         let (wrapped, raw) = try handlePurchaseResult(purchaseResult)
         await raw.finish()
         return wrapped
+    }
+
+    /// Buys a consumable and defers `finish()` until `verify` succeeds.
+    ///
+    /// A consumable is the only product type whose value is granted by a server rather than by
+    /// the App Store, so the order matters: finishing is what tells StoreKit to stop
+    /// re-delivering a transaction, and doing that before the grant is recorded turns a
+    /// transient backend failure into money taken for nothing. If `verify` throws, the
+    /// transaction is deliberately left **unfinished** — StoreKit resurfaces it on a later
+    /// launch, where `redeliveryListener(verify:)` retries it. Backends are expected to be
+    /// idempotent, so a replay grants nothing twice.
+    ///
+    /// The product's real type decides, not the caller: asking to buy a subscription here is a
+    /// programming error, not something to paper over.
+    func purchaseConsumable(
+        productID: String,
+        appAccountToken: UUID?,
+        verify: @Sendable (StoreKitClient.Transaction) async throws -> Void
+    ) async throws -> StoreKitClient.Transaction {
+        let product = try await fetchOrGetCachedProduct(for: productID)
+        try requireProductType(
+            product.type,
+            productID: productID,
+            accepting: PurchaseEntryPoint.consumable,
+            expected: .consumable
+        )
+
+        var options: Set<StoreKit.Product.PurchaseOption> = []
+        if let appAccountToken {
+            options.insert(.appAccountToken(appAccountToken))
+        }
+
+        let purchaseResult = try await product.purchase(options: options)
+        let (wrapped, raw) = try handlePurchaseResult(purchaseResult)
+        try await verify(wrapped)
+        await raw.finish()
+        logger("Consumable \(productID) verified and finished")
+        return wrapped
+    }
+
+    /// Long-lived listener that re-verifies consumables StoreKit re-delivers.
+    ///
+    /// Covers the purchase that was paid for but never granted — the app died between
+    /// `product.purchase()` and the verifier's reply, so the transaction is still unfinished and
+    /// StoreKit hands it back on a later launch.
+    ///
+    /// Mirrors `purchaseConsumable`'s contract: a failed verify leaves the transaction
+    /// unfinished so it comes back again, rather than finishing it and destroying a paid grant.
+    /// Non-consumables are ignored outright — the actor's own update loop already finishes
+    /// those, and the two touch disjoint sets so neither can finish the other's transaction.
+    ///
+    /// Unlike `processUnfinishedConsumables`, this keeps no device-local delivered-ledger: the
+    /// backend's idempotency is the single source of truth, and a local flag can permanently
+    /// suppress a re-grant after a reinstall.
+    nonisolated func redeliveryListener(
+        verify: @escaping @Sendable (StoreKitClient.Transaction) async throws -> Void
+    ) -> Task<Void, Never> {
+        Task { [self] in
+            for await update in StoreKit.Transaction.updates {
+                guard case .verified(let transaction) = update else { continue }
+                guard transaction.productType == .consumable else { continue }
+                guard transaction.revocationDate == nil else {
+                    await transaction.finish()
+                    await log("Redelivered consumable \(transaction.productID) was revoked — finished")
+                    continue
+                }
+                do {
+                    try await verify(StoreKitClient.Transaction(rawValue: transaction))
+                    await transaction.finish()
+                    await log("Redelivered consumable \(transaction.productID) verified and finished")
+                } catch {
+                    await log(
+                        "Redelivered consumable \(transaction.productID) left unfinished: \(error.localizedDescription)"
+                    )
+                }
+            }
+        }
+    }
+
+    private func log(_ message: String) {
+        logger(message)
     }
 
     func restorePurchases() async -> [StoreKitClient.Transaction] {
@@ -299,8 +431,8 @@ actor StoreKitLiveActor {
     }
 
     #if canImport(UIKit) && !os(watchOS)
-        private func currentWindowScene() async -> UIWindowScene? {
-            await UIApplication.shared.connectedScenes.first(where: { $0 is UIWindowScene }) as? UIWindowScene
-        }
+    private func currentWindowScene() async -> UIWindowScene? {
+        await UIApplication.shared.connectedScenes.first(where: { $0 is UIWindowScene }) as? UIWindowScene
+    }
     #endif
 }

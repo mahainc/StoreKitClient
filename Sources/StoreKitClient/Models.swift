@@ -251,51 +251,94 @@ extension StoreKitClient {
     ///
     /// A wrapper around `StoreKit.Transaction` that provides convenient access
     /// to transaction details and pricing information.
+    ///
+    /// A transaction built from StoreKit reads every field off ``rawValue``. One built for a
+    /// mock, a preview, or a fixture has no `rawValue` and reports the field values it was
+    /// handed instead — without them a `nil`-backed transaction answers `0` for ``id`` and
+    /// `""` for ``productID``, which makes two of them indistinguishable and leaves any flow
+    /// keyed on the product or the transaction identifier untestable.
     public struct Transaction: Equatable, Sendable {
         /// The underlying StoreKit transaction, if available.
         ///
         /// This will be `nil` for mock transactions used in testing and previews.
         public let rawValue: StoreKit.Transaction?
 
+        /// The field values reported when no StoreKit transaction backs this one.
+        ///
+        /// Read only where `rawValue` reports nothing, so a real transaction is never masked.
+        private let overrides: Overrides
+
         /// The unique identifier for this transaction.
-        public var id: UInt64 { rawValue?.id ?? 0 }
+        public var id: UInt64 { rawValue?.id ?? overrides.id ?? 0 }
+
+        /// The identifier of the first transaction in this purchase's chain.
+        ///
+        /// Every renewal of a subscription repeats the original's identifier, so this — not
+        /// ``id`` — is what a backend keys a subscriber on. It equals ``id`` for a first
+        /// purchase, and is `nil` only for a fixture that was not given one.
+        public var originalID: UInt64? { rawValue?.originalID ?? overrides.originalID }
 
         /// The identifier of the product that was purchased.
-        public var productID: String { rawValue?.productID ?? "" }
+        public var productID: String { rawValue?.productID ?? overrides.productID ?? "" }
 
         /// The type of product that was purchased.
-        public var productType: StoreKit.Product.ProductType { rawValue?.productType ?? .nonConsumable }
+        public var productType: StoreKit.Product.ProductType {
+            rawValue?.productType ?? overrides.productType ?? .nonConsumable
+        }
 
         /// The date when the purchase was made.
-        public var purchaseDate: Date? { rawValue?.purchaseDate }
+        public var purchaseDate: Date? { rawValue?.purchaseDate ?? overrides.purchaseDate }
 
         /// The date when the subscription expires (for subscriptions only).
-        public var expirationDate: Date? { rawValue?.expirationDate }
+        public var expirationDate: Date? { rawValue?.expirationDate ?? overrides.expirationDate }
 
         /// The quantity of items purchased (for consumables).
-        public var purchasedQuantity: Int { rawValue?.purchasedQuantity ?? 1 }
+        public var purchasedQuantity: Int { rawValue?.purchasedQuantity ?? overrides.purchasedQuantity ?? 1 }
 
         /// The type of offer that was applied to this transaction, if any.
-        public var offerType: StoreKit.Transaction.OfferType? { rawValue?.offerType }
+        public var offerType: StoreKit.Transaction.OfferType? { rawValue?.offerType ?? overrides.offerType }
 
         /// The identifier of the offer that was applied, if any.
-        public var offerID: String? { rawValue?.offerID }
+        public var offerID: String? { rawValue?.offerID ?? overrides.offerID }
 
         /// Whether this transaction was purchased with a free trial.
         public var isFreeTrial: Bool { offerType == .introductory }
 
+        /// The amount charged, in the currency ``currency`` names.
+        ///
+        /// `nil` when StoreKit recorded no price, as it does for transactions restored from
+        /// older receipts.
+        public var price: Decimal? { rawValue?.price ?? overrides.price }
+
+        /// The ISO 4217 code of the currency ``price`` is denominated in (e.g. `"USD"`).
+        public var currency: String? {
+            guard let rawValue else { return overrides.currency }
+            return rawValue.currency?.identifier ?? overrides.currency
+        }
+
+        /// The App Store storefront the purchase was made in, as an ISO 3166-1 alpha-3 country
+        /// code (e.g. `"USA"`).
+        ///
+        /// The storefront decides price and tax, and is not necessarily the device's locale.
+        /// `nil` below iOS 17 / macOS 14, where StoreKit does not report it on a transaction.
+        public var salesRegion: String? {
+            guard let rawValue else { return overrides.salesRegion }
+            return rawValue.storefront.countryCode
+        }
+
+        /// Whether this account bought the product or received it through Family Sharing.
+        public var ownershipType: StoreKit.Transaction.OwnershipType? {
+            rawValue?.ownershipType ?? overrides.ownershipType
+        }
+
         /// The environment in which this transaction was made.
         public var environment: TransactionEnvironment {
-            guard let rawValue else { return .unknown }
-            if #available(iOS 16.0, macOS 13.0, *) {
-                return switch rawValue.environment {
-                    case .sandbox: .sandbox
-                    case .production: .production
-                    case .xcode: .xcode
-                    default: .unknown
-                }
-            } else {
-                return .unknown
+            guard let rawValue else { return overrides.environment ?? .unknown }
+            return switch rawValue.environment {
+                case .sandbox: .sandbox
+                case .production: .production
+                case .xcode: .xcode
+                default: .unknown
             }
         }
 
@@ -303,31 +346,17 @@ extension StoreKitClient {
         ///
         /// Returns "Unknown Price" if the transaction has no pricing information.
         public var displayPrice: String? {
-            guard let rawValue else { return "Unknown Price" }
+            guard let price else { return "Unknown Price" }
 
             let formatter = NumberFormatter()
             formatter.numberStyle = .currency
 
-            if #available(iOS 16.0, macOS 13.0, *) {
-                guard let price = rawValue.price else {
-                    return "Unknown Price"
-                }
-                if let currency = rawValue.currency {
-                    formatter.currencyCode = currency.identifier
-                    return formatter.string(from: price as NSDecimalNumber) ?? "\(price) \(currency.identifier)"
-                }
+            guard let currency else {
                 return formatter.string(from: price as NSDecimalNumber) ?? "\(price)"
-            } else {
-                guard let price = rawValue.price, let currencyCode = rawValue.currencyCode else {
-                    return "Unknown Price"
-                }
-                formatter.currencyCode = currencyCode
-                return formatter.string(from: price as NSDecimalNumber) ?? "\(price) \(currencyCode)"
             }
-        }
 
-        public init(rawValue: StoreKit.Transaction? = nil) {
-            self.rawValue = rawValue
+            formatter.currencyCode = currency
+            return formatter.string(from: price as NSDecimalNumber) ?? "\(price) \(currency)"
         }
 
         /// Checks if the transaction has expired.
@@ -338,14 +367,119 @@ extension StoreKitClient {
             return expirationDate < Date()
         }
 
+        public init(rawValue: StoreKit.Transaction? = nil) {
+            self.rawValue = rawValue
+            self.overrides = Overrides()
+        }
+
+        /// Builds a transaction that carries its own field values, with no StoreKit behind it.
+        ///
+        /// Everything but the identity of the purchase is optional: supply the fields the code
+        /// under test actually reads and leave the rest at the defaults a `nil`-backed
+        /// transaction has always reported.
+        ///
+        /// - Parameters:
+        ///   - id: The transaction identifier.
+        ///   - productID: The product that was bought.
+        ///   - productType: What kind of product it was.
+        ///   - originalID: The first transaction in this purchase's chain. Defaults to `id`.
+        public init(
+            id: UInt64,
+            productID: String,
+            productType: StoreKit.Product.ProductType,
+            originalID: UInt64? = nil,
+            purchaseDate: Date? = nil,
+            expirationDate: Date? = nil,
+            purchasedQuantity: Int? = nil,
+            offerType: StoreKit.Transaction.OfferType? = nil,
+            offerID: String? = nil,
+            environment: TransactionEnvironment? = nil,
+            price: Decimal? = nil,
+            currency: String? = nil,
+            salesRegion: String? = nil,
+            ownershipType: StoreKit.Transaction.OwnershipType? = nil
+        ) {
+            self.rawValue = nil
+            self.overrides = Overrides(
+                id: id,
+                originalID: originalID,
+                productID: productID,
+                productType: productType,
+                purchaseDate: purchaseDate,
+                expirationDate: expirationDate,
+                purchasedQuantity: purchasedQuantity,
+                offerType: offerType,
+                offerID: offerID,
+                environment: environment,
+                price: price,
+                currency: currency,
+                salesRegion: salesRegion,
+                ownershipType: ownershipType
+            )
+        }
+
         /// Mock consumable transaction for testing
-        public static let mockConsumable = Transaction(rawValue: nil)
+        public static let mockConsumable = Transaction(
+            id: 2_000_000_001,
+            productID: "com.example.coins100",
+            productType: .consumable,
+            purchaseDate: Date(timeIntervalSince1970: 1_700_000_000),
+            price: 0.99,
+            currency: "USD",
+            salesRegion: "USA",
+            ownershipType: .purchased
+        )
 
         /// Mock active subscription transaction for testing
-        public static let mockSubscription = Transaction(rawValue: nil)
+        public static let mockSubscription = Transaction(
+            id: 2_000_000_002,
+            productID: "com.example.product.weekly",
+            productType: .autoRenewable,
+            purchaseDate: Date(timeIntervalSince1970: 1_700_000_000),
+            expirationDate: Date(timeIntervalSinceNow: 7 * 24 * 60 * 60),
+            price: 0.99,
+            currency: "USD",
+            salesRegion: "USA",
+            ownershipType: .purchased
+        )
 
         /// Mock expired subscription transaction for testing
-        public static let mockExpiredSubscription = Transaction(rawValue: nil)
+        public static let mockExpiredSubscription = Transaction(
+            id: 2_000_000_003,
+            productID: "com.example.product.weekly",
+            productType: .autoRenewable,
+            purchaseDate: Date(timeIntervalSince1970: 1_600_000_000),
+            expirationDate: Date(timeIntervalSince1970: 1_600_604_800),
+            price: 0.99,
+            currency: "USD",
+            salesRegion: "USA",
+            ownershipType: .purchased
+        )
+    }
+}
+
+// MARK: - StoreKitClient.Transaction.Overrides
+
+extension StoreKitClient.Transaction {
+    /// The field values a transaction with no `rawValue` reports.
+    ///
+    /// Every field is optional so that an unset one falls through to the same default a
+    /// `nil`-backed transaction has always answered with.
+    struct Overrides: Equatable, Sendable {
+        var id: UInt64?
+        var originalID: UInt64?
+        var productID: String?
+        var productType: StoreKit.Product.ProductType?
+        var purchaseDate: Date?
+        var expirationDate: Date?
+        var purchasedQuantity: Int?
+        var offerType: StoreKit.Transaction.OfferType?
+        var offerID: String?
+        var environment: StoreKitClient.TransactionEnvironment?
+        var price: Decimal?
+        var currency: String?
+        var salesRegion: String?
+        var ownershipType: StoreKit.Transaction.OwnershipType?
     }
 }
 
@@ -464,6 +598,22 @@ extension StoreKitClient {
         /// - Parameter productID: The identifier of the product that was not found.
         case productNotFound(productID: String)
 
+        /// A purchase entry point was called for the wrong kind of product.
+        ///
+        /// The three purchase methods are not interchangeable — only a consumable may defer
+        /// `finish()` behind a server verify — so each one checks the product's real type
+        /// rather than trusting the call site.
+        ///
+        /// - Parameters:
+        ///   - productID: The product that was asked for.
+        ///   - expected: The type the entry point serves.
+        ///   - actual: The type the App Store actually reports.
+        case productTypeMismatch(
+            productID: String,
+            expected: StoreKit.Product.ProductType,
+            actual: StoreKit.Product.ProductType
+        )
+
         public var errorDescription: String? {
             switch self {
                 case .fetchProductsFailed(let productIDs, let underlyingError):
@@ -479,6 +629,8 @@ extension StoreKitClient {
                     return "Purchase completed with an unknown result"
                 case .productNotFound(let productID):
                     return "Product '\(productID)' was not found in the App Store"
+                case .productTypeMismatch(let productID, let expected, let actual):
+                    return "Product '\(productID)' is \(actual), not \(expected)"
             }
         }
 
@@ -497,6 +649,9 @@ extension StoreKitClient {
                     return "Please contact support if you were charged but did not receive your purchase."
                 case .productNotFound:
                     return "Ensure the product ID is correct and registered in App Store Connect."
+                case .productTypeMismatch:
+                    return
+                        "Use subscribe(_:) for subscriptions, purchase(_:) for non-consumables, and purchaseConsumable(...) for consumables."
             }
         }
     }

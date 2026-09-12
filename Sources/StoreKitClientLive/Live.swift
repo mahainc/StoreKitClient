@@ -36,6 +36,22 @@ extension StoreKitClient: DependencyKey {
             purchase: { productID in
                 try await actor.purchase(productID: productID)
             },
+            subscribe: { productID in
+                try await actor.subscribe(productID: productID)
+            },
+            purchaseConsumable: { productID, appAccountToken, verify in
+                try await actor.purchaseConsumable(
+                    productID: productID,
+                    appAccountToken: appAccountToken,
+                    verify: verify
+                )
+            },
+            redeliveryListener: { verify in
+                actor.redeliveryListener(verify: verify)
+            },
+            syncAppStore: {
+                try await actor.syncAppStore()
+            },
             restorePurchases: {
                 await actor.restorePurchases()
             },

@@ -47,6 +47,16 @@ extension StoreKitClient {
         purchase: { _ in
             .init(rawValue: nil)
         },
+        subscribe: { _ in
+            .init(rawValue: nil)
+        },
+        purchaseConsumable: { _, _, verify in
+            let transaction = StoreKitClient.Transaction(rawValue: nil)
+            try await verify(transaction)
+            return transaction
+        },
+        redeliveryListener: { _ in Task {} },
+        syncAppStore: {},
         restorePurchases: { [] },
         getLatestTransaction: { nil },
         isEligibleForIntroOffer: { _ in false },
@@ -67,6 +77,16 @@ extension StoreKitClient {
         purchase: { _ in
             throw URLError(.badServerResponse)
         },
+        subscribe: { _ in
+            throw URLError(.badServerResponse)
+        },
+        purchaseConsumable: { _, _, verify in
+            let transaction = StoreKitClient.Transaction(rawValue: nil)
+            try await verify(transaction)
+            return transaction
+        },
+        redeliveryListener: { _ in Task {} },
+        syncAppStore: { throw URLError(.badServerResponse) },
         restorePurchases: { [] },
         getLatestTransaction: { nil },
         isEligibleForIntroOffer: { _ in false },
@@ -137,6 +157,17 @@ extension StoreKitClient {
             try await Task.sleep(nanoseconds: MockConstants.purchaseDelayNanoseconds)
             return .init(rawValue: nil)
         },
+        subscribe: { _ in
+            try await Task.sleep(nanoseconds: MockConstants.purchaseDelayNanoseconds)
+            return .mockSubscription
+        },
+        purchaseConsumable: { _, _, verify in
+            let transaction = StoreKitClient.Transaction(rawValue: nil)
+            try await verify(transaction)
+            return transaction
+        },
+        redeliveryListener: { _ in Task {} },
+        syncAppStore: {},
         restorePurchases: { [] },
         getLatestTransaction: { .mockSubscription },
         isEligibleForIntroOffer: { _ in true },
@@ -180,6 +211,14 @@ extension StoreKitClient {
         observeTransactions: { .never },
         requestReview: {},
         purchase: { _ in .mockSubscription },
+        subscribe: { _ in .mockSubscription },
+        purchaseConsumable: { _, _, verify in
+            let transaction = StoreKitClient.Transaction(rawValue: nil)
+            try await verify(transaction)
+            return transaction
+        },
+        redeliveryListener: { _ in Task {} },
+        syncAppStore: {},
         restorePurchases: { [.mockSubscription] },
         getLatestTransaction: { .mockSubscription },
         isEligibleForIntroOffer: { _ in false },
@@ -221,6 +260,14 @@ extension StoreKitClient {
         observeTransactions: { .never },
         requestReview: {},
         purchase: { _ in .mockExpiredSubscription },
+        subscribe: { _ in .mockExpiredSubscription },
+        purchaseConsumable: { _, _, verify in
+            let transaction = StoreKitClient.Transaction(rawValue: nil)
+            try await verify(transaction)
+            return transaction
+        },
+        redeliveryListener: { _ in Task {} },
+        syncAppStore: {},
         restorePurchases: { [] },
         getLatestTransaction: { nil },
         isEligibleForIntroOffer: { _ in false },
@@ -259,6 +306,14 @@ extension StoreKitClient {
         observeTransactions: { .never },
         requestReview: {},
         purchase: { _ in .mockConsumable },
+        subscribe: { _ in .mockSubscription },
+        purchaseConsumable: { _, _, verify in
+            let transaction = StoreKitClient.Transaction(rawValue: nil)
+            try await verify(transaction)
+            return transaction
+        },
+        redeliveryListener: { _ in Task {} },
+        syncAppStore: {},
         restorePurchases: { [] },
         getLatestTransaction: { nil },
         isEligibleForIntroOffer: { _ in false },
@@ -287,6 +342,14 @@ extension StoreKitClient {
         },
         requestReview: {},
         purchase: { _ in .mockSubscription },
+        subscribe: { _ in .mockSubscription },
+        purchaseConsumable: { _, _, verify in
+            let transaction = StoreKitClient.Transaction(rawValue: nil)
+            try await verify(transaction)
+            return transaction
+        },
+        redeliveryListener: { _ in Task {} },
+        syncAppStore: {},
         restorePurchases: { [] },
         getLatestTransaction: { .mockSubscription },
         isEligibleForIntroOffer: { _ in false },
