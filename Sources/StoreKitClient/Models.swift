@@ -656,3 +656,25 @@ extension StoreKitClient {
         }
     }
 }
+
+extension StoreKitClient {
+    /// What the FunnelClient StoreKit port needs that its methods do not carry.
+    public struct FunnelSettings: Sendable {
+        /// Fallback set for `restore(productIDs:)`: when the caller's requested IDs match
+        /// nothing, any entitlement in this set still counts as restored.
+        public let premiumProductIDs: Set<String>
+
+        /// Ties a credit purchase to the buyer in App Store Server notifications. `nil` uses
+        /// the vendor identifier; supply your own where `UIKit` is absent or the backend keys
+        /// on something else.
+        public let appAccountToken: (@Sendable () -> UUID?)?
+
+        public init(
+            premiumProductIDs: Set<String> = [],
+            appAccountToken: (@Sendable () -> UUID?)? = nil
+        ) {
+            self.premiumProductIDs = premiumProductIDs
+            self.appAccountToken = appAccountToken
+        }
+    }
+}

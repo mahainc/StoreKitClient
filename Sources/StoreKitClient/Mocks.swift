@@ -61,7 +61,8 @@ extension StoreKitClient {
         getLatestTransaction: { nil },
         isEligibleForIntroOffer: { _ in false },
         currentSubscriptionStatus: { _ in [] },
-        observeSubscriptionStatus: { _ in .finished }
+        observeSubscriptionStatus: { _ in .finished },
+        funnelSettings: { FunnelSettings() }
     )
 
     /// A failing implementation that throws errors for operations.
@@ -91,7 +92,8 @@ extension StoreKitClient {
         getLatestTransaction: { nil },
         isEligibleForIntroOffer: { _ in false },
         currentSubscriptionStatus: { _ in [] },
-        observeSubscriptionStatus: { _ in .finished }
+        observeSubscriptionStatus: { _ in .finished },
+        funnelSettings: { FunnelSettings() }
     )
 
     /// A successful implementation with mock products and transactions.
@@ -181,7 +183,8 @@ extension StoreKitClient {
                 ])
                 continuation.finish()
             }
-        }
+        },
+        funnelSettings: { FunnelSettings() }
     )
 
     /// A mock with active subscription restoration.
@@ -230,7 +233,8 @@ extension StoreKitClient {
                 continuation.yield([.init(state: .subscribed, productID: "com.example.premium", groupID: groupID)])
                 continuation.finish()
             }
-        }
+        },
+        funnelSettings: { FunnelSettings() }
     )
 
     /// A mock with an expired subscription (e.g. a free trial that lapsed).
@@ -279,7 +283,8 @@ extension StoreKitClient {
                 continuation.yield([.init(state: .expired, productID: "com.example.premium", groupID: groupID)])
                 continuation.finish()
             }
-        }
+        },
+        funnelSettings: { FunnelSettings() }
     )
 
     /// A mock that simulates consumable purchases.
@@ -318,7 +323,8 @@ extension StoreKitClient {
         getLatestTransaction: { nil },
         isEligibleForIntroOffer: { _ in false },
         currentSubscriptionStatus: { _ in [] },
-        observeSubscriptionStatus: { _ in .finished }
+        observeSubscriptionStatus: { _ in .finished },
+        funnelSettings: { FunnelSettings() }
     )
 
     /// A mock that emits transaction updates.
@@ -363,6 +369,7 @@ extension StoreKitClient {
                 ])
                 continuation.finish()
             }
-        }
+        },
+        funnelSettings: { FunnelSettings() }
     )
 }

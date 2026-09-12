@@ -12,7 +12,11 @@ import StoreKitClient
 @available(iOSApplicationExtension, unavailable)
 @available(iOS 15.0, *)
 extension StoreKitClient: DependencyKey {
-    public static let liveValue: StoreKitClient = {
+    public static let liveValue: StoreKitClient = live()
+
+    /// - Parameter funnelSettings: Values the FunnelClient StoreKit port needs but does not
+    ///   carry — the premium fallback set for restore, and the app-account token.
+    public static func live(funnelSettings: FunnelSettings = FunnelSettings()) -> StoreKitClient {
         let actor = StoreKitLiveActor()
         return StoreKitClient(
             receiptURL: {
@@ -66,7 +70,8 @@ extension StoreKitClient: DependencyKey {
             },
             observeSubscriptionStatus: { groupID in
                 await actor.observeSubscriptionStatus(groupID: groupID)
-            }
+            },
+            funnelSettings: { funnelSettings }
         )
-    }()
+    }
 }

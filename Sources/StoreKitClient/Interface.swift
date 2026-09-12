@@ -211,4 +211,7 @@ public struct StoreKitClient: Sendable {
     public var observeSubscriptionStatus: @Sendable (_ groupID: String) async -> AsyncStream<[SubscriptionStatus]> = {
         _ in .finished
     }
+
+    /// Host-supplied values the FunnelClient StoreKit port needs but does not carry.
+    public var funnelSettings: @Sendable () -> FunnelSettings = { FunnelSettings() }
 }
