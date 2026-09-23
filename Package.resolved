@@ -1,5 +1,5 @@
 {
-  "originHash" : "9863f1a5c0b6ad7bcad1c766125811c92fff5df5f06362699baf68d8509008b0",
+  "originHash" : "e391634059ede463a65fb5a655e10e9f024bffd976b2132f2190f9f9c2407acb",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/mahainc/FunnelClient.git",
       "state" : {
-        "revision" : "ee1f0e3c84682e76bc8fa711223471861aa465aa",
-        "version" : "7.2.0"
+        "revision" : "68bfb0484a308d77ec5325d3b6d33febf1bea33d",
+        "version" : "9.0.0"
       }
     },
     {

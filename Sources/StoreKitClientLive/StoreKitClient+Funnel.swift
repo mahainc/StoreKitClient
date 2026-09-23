@@ -74,7 +74,7 @@ extension StoreKitClient: FunnelClient.StoreKit.Providing {
             log.funnel.paywall.info(
                 "purchase completed (credit) sku=\(skuID) tx=\(mapped.transactionID) grant=\(creditOutcome.granted) wallet=\(creditOutcome.walletBalance)"
             )
-            return .creditedFirebaseLogged(
+            return .creditedAnalyticsLogged(
                 mapped,
                 walletBalance: creditOutcome.walletBalance,
                 granted: creditOutcome.granted
