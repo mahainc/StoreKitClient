@@ -15,6 +15,37 @@ enum StoreKitFunnelMapping {
         productType == .autoRenewable || productType == .nonRenewable
     }
 
+    /// Maps one subscription's standing across the boundary. `groupID` is dropped on
+    /// purpose: it is the StoreKit concept the conformer used to ask the question, and the
+    /// port deliberately does not expose it — a caller keying UI on a group id would be
+    /// depending on how the answer was obtained.
+    static func subscriptionStatus(
+        _ status: StoreKitClient.SubscriptionStatus
+    ) -> FunnelClient.Commerce.StoreKit.SubscriptionStatus {
+        FunnelClient.Commerce.StoreKit.SubscriptionStatus(
+            productID: status.productID,
+            state: renewalState(status.state),
+            expirationDate: status.expirationDate
+        )
+    }
+
+    /// One-to-one and exhaustive, with no `default`: adding a case to either enum must fail
+    /// to compile here rather than quietly mapping to something wrong. `unknown` maps to
+    /// `unknown` instead of to an inactive state, so the port keeps the distinction between
+    /// "Apple said expired" and "Apple said something we do not recognise".
+    static func renewalState(
+        _ state: StoreKitClient.SubscriptionStatus.RenewalState
+    ) -> FunnelClient.Commerce.StoreKit.SubscriptionStatus.RenewalState {
+        switch state {
+            case .subscribed: return .subscribed
+            case .expired: return .expired
+            case .inBillingRetryPeriod: return .inBillingRetryPeriod
+            case .inGracePeriod: return .inGracePeriod
+            case .revoked: return .revoked
+            case .unknown: return .unknown
+        }
+    }
+
     /// Fills all thirteen fields of the port's transaction.
     ///
     /// - Parameters:

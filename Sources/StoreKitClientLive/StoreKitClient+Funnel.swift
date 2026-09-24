@@ -12,13 +12,14 @@ import UIKit
 /// Serves `FunnelClient`'s StoreKit port from the client itself, so a host reaches it
 /// through the dependency key it already has — `@Dependency(\.storeKitClient)`.
 ///
-/// It implements **all six** requirements, four of which ship a default in the port. Three
+/// It implements **all seven** requirements, five of which ship a default in the port. Three
 /// of those defaults are silently wrong for a real store: the credit overload drops the
 /// verifier, `subscriptionUpdates()` returns an empty stream, and `startRedeliveryListener`
 /// returns a task that does nothing. Inheriting any of the three compiles and then loses
-/// money. The fourth, `currentSubscription()`, is honest instead of wrong — the port reads
-/// its `nil` as "not known", never as "not subscribed" — so inheriting it costs nothing and
-/// merely leaves every screen keyed on the current plan permanently empty.
+/// money. The other two, `currentSubscription()` and `subscriptionStatuses()`, are honest
+/// instead of wrong — the port reads their `nil` and `[]` as "not known", never as "not
+/// subscribed" — so inheriting them costs nothing and merely leaves every screen keyed on
+/// the current plan permanently empty.
 ///
 /// Every StoreKit decision — which product type takes which purchase path, when a
 /// transaction may be finished — belongs to `StoreKitClient`; this is a translator.
@@ -187,6 +188,44 @@ extension StoreKitClient: FunnelClient.StoreKit.Providing {
         let product = try? await self.loadProducts([current.productID]).first
         log.funnel.paywall.notice("currentSubscription matched product=\(current.productID) tx=\(current.id)")
         return StoreKitFunnelMapping.transaction(current, product: product)
+    }
+
+    /// Every premium subscription's standing, gathered across **all** groups the premium
+    /// product ids belong to rather than just the first one found. Four apps in the fleet
+    /// happen to keep `weekly`/`monthly`/`yearly` in one group, so "first group wins" is
+    /// right today by luck; an app that sells two subscription lines would silently lose one.
+    ///
+    /// The group ids come from the products themselves — `funnelSettings().premiumProductIDs`
+    /// loaded and asked for their `subscription?.subscriptionGroupID`. Non-subscriptions in
+    /// that set (credit packs share it in some apps) carry no subscription info and drop out
+    /// on their own.
+    ///
+    /// Empty on failure as well as on "never subscribed", which the port documents as one
+    /// answer: "not known". A caller must not render "you have never subscribed" from it.
+    public func subscriptionStatuses() async -> [FunnelClient.Commerce.StoreKit.SubscriptionStatus] {
+        @Dependency(\.logClient) var log
+        let premiumIDs = funnelSettings().premiumProductIDs
+        guard !premiumIDs.isEmpty else {
+            log.funnel.paywall.notice("subscriptionStatuses no premium ids configured")
+            return []
+        }
+        guard let products = try? await self.loadProducts(premiumIDs) else {
+            log.funnel.paywall.notice("subscriptionStatuses product load failed ids=\(premiumIDs.count)")
+            return []
+        }
+        let groupIDs = Set(products.compactMap { $0.subscription?.subscriptionGroupID }.filter { !$0.isEmpty })
+        guard !groupIDs.isEmpty else {
+            log.funnel.paywall.notice("subscriptionStatuses no subscription group among ids=\(premiumIDs.count)")
+            return []
+        }
+        var out: [FunnelClient.Commerce.StoreKit.SubscriptionStatus] = []
+        for groupID in groupIDs.sorted() {
+            out += await self.currentSubscriptionStatus(groupID).map(StoreKitFunnelMapping.subscriptionStatus)
+        }
+        log.funnel.paywall.notice(
+            "subscriptionStatuses groups=\(groupIDs.count) statuses=\(out.count) active=\(out.filter(\.isActive).count)"
+        )
+        return out
     }
 
     // MARK: Streams
