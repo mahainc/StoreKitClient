@@ -12,10 +12,13 @@ import UIKit
 /// Serves `FunnelClient`'s StoreKit port from the client itself, so a host reaches it
 /// through the dependency key it already has — `@Dependency(\.storeKitClient)`.
 ///
-/// It implements **all five** requirements. Three ship a default in the port, and each
-/// default is silently wrong for a real store: the credit overload drops the verifier,
-/// `subscriptionUpdates()` returns an empty stream, and `startRedeliveryListener` returns a
-/// task that does nothing. Inheriting any of them compiles and then loses money.
+/// It implements **all six** requirements, four of which ship a default in the port. Three
+/// of those defaults are silently wrong for a real store: the credit overload drops the
+/// verifier, `subscriptionUpdates()` returns an empty stream, and `startRedeliveryListener`
+/// returns a task that does nothing. Inheriting any of the three compiles and then loses
+/// money. The fourth, `currentSubscription()`, is honest instead of wrong — the port reads
+/// its `nil` as "not known", never as "not subscribed" — so inheriting it costs nothing and
+/// merely leaves every screen keyed on the current plan permanently empty.
 ///
 /// Every StoreKit decision — which product type takes which purchase path, when a
 /// transaction may be finished — belongs to `StoreKitClient`; this is a translator.
@@ -116,7 +119,10 @@ extension StoreKitClient: FunnelClient.StoreKit.Providing {
                     return (try await self.purchaseConsumable(product.id, nil) { _ in }, nil)
                 }
                 let ledger = CreditLedger()
-                let transaction = try await self.purchaseConsumable(product.id, (funnelSettings().appAccountToken ?? Self.deviceAppAccountToken)()) { transaction in
+                let transaction = try await self.purchaseConsumable(
+                    product.id,
+                    (funnelSettings().appAccountToken ?? Self.deviceAppAccountToken)()
+                ) { transaction in
                     switch await credit.verifier(String(transaction.id), product.id) {
                         case let .credited(walletBalance, granted):
                             await ledger.record(walletBalance: walletBalance, granted: granted)
@@ -155,6 +161,32 @@ extension StoreKitClient: FunnelClient.StoreKit.Providing {
         let product = try? await self.loadProducts([match.productID]).first
         log.funnel.paywall.notice("restore matched product=\(match.productID) tx=\(match.id)")
         return StoreKitFunnelMapping.transaction(match, product: product)
+    }
+
+    // MARK: Current plan
+
+    /// Answers from `restorePurchases()`, which walks `currentEntitlements` and has already
+    /// dropped whatever was revoked or has expired. Unlike `restore(productIDs:)` it runs no
+    /// `syncAppStore()`: this is read on a screen's appearance, and a sync can put an Apple
+    /// sign-in dialog in front of a user who asked for nothing. The `loadProducts` call below
+    /// can still reach the network — it fetches any id the product cache has not seen — but it
+    /// asks about a product, which shows the user nothing and cannot fail their request.
+    ///
+    /// Entitlements also carry credit packs and one-time unlocks, which is why the product
+    /// type decides what qualifies before any date is compared. A non-subscription has no
+    /// expiration at all, so it would otherwise be reported as the user's plan whenever it is
+    /// the only thing they own.
+    public func currentSubscription() async -> FunnelClient.StoreKit.Transaction? {
+        @Dependency(\.logClient) var log
+        let owned = await self.restorePurchases()
+        let subscriptions = owned.filter { StoreKitFunnelMapping.isSubscription($0.productType) }
+        guard let current = subscriptions.max(by: { Self.entitlementEnd(of: $0) < Self.entitlementEnd(of: $1) }) else {
+            log.funnel.paywall.notice("currentSubscription none owned entitlements=\(owned.count)")
+            return nil
+        }
+        let product = try? await self.loadProducts([current.productID]).first
+        log.funnel.paywall.notice("currentSubscription matched product=\(current.productID) tx=\(current.id)")
+        return StoreKitFunnelMapping.transaction(current, product: product)
     }
 
     // MARK: Streams
@@ -210,6 +242,15 @@ extension StoreKitClient: FunnelClient.StoreKit.Providing {
         let productType: String
 
         var errorDescription: String? { "Unsupported product type: \(productType)" }
+    }
+
+    /// When a subscription's entitlement runs out, for ranking two of them against each other.
+    ///
+    /// A non-renewing subscription can reach here without an expiration date. That is the
+    /// least informative answer of the two, so it ranks below any dated entitlement rather
+    /// than outranking every one of them as an open-ended plan would.
+    private static func entitlementEnd(of transaction: StoreKitClient.Transaction) -> Date {
+        transaction.expirationDate ?? .distantPast
     }
 
     private static func deviceAppAccountToken() -> UUID? {

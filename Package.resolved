@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/mahainc/FunnelClient.git",
       "state" : {
-        "revision" : "68bfb0484a308d77ec5325d3b6d33febf1bea33d",
-        "version" : "9.0.0"
+        "revision" : "318baeb6f6336e93ddc708a7897672148d5e2b2d",
+        "version" : "9.1.0"
       }
     },
     {
