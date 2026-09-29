@@ -1,3 +1,7 @@
+// The funnel conformer compiles only when the `Funnel` trait is enabled — the
+// trait is what puts FunnelClient in the dependency graph at all, so without it
+// this file has no module to import. See Package.swift.
+#if Funnel
 import Foundation
 import FunnelClient
 import StoreKitClient
@@ -63,3 +67,4 @@ actor StoreKitSubscriptionBridge {
         }
     }
 }
+#endif
