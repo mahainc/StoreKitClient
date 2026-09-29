@@ -60,8 +60,8 @@ enum StoreKitFunnelMapping {
     static func transaction(
         _ transaction: StoreKitClient.Transaction,
         product: StoreKitClient.Product?
-    ) -> FunnelClient.StoreKit.Transaction {
-        FunnelClient.StoreKit.Transaction(
+    ) -> FunnelClient.Commerce.StoreKit.Transaction {
+        FunnelClient.Commerce.StoreKit.Transaction(
             productID: transaction.productID,
             transactionID: String(transaction.id),
             originalTransactionID: transaction.originalID.map(String.init),
@@ -85,7 +85,7 @@ enum StoreKitFunnelMapping {
     /// downstream currently classifies as `Kind.unknown`.
     static func productType(
         _ productType: StoreKit.Product.ProductType
-    ) -> FunnelClient.StoreKit.Transaction.ProductType? {
+    ) -> FunnelClient.Commerce.StoreKit.Transaction.ProductType? {
         switch productType {
             case .consumable: return .consumable
             case .nonConsumable: return .nonConsumable
@@ -97,7 +97,7 @@ enum StoreKitFunnelMapping {
 
     private static func ownershipType(
         _ ownershipType: StoreKit.Transaction.OwnershipType?
-    ) -> FunnelClient.StoreKit.Transaction.OwnershipType? {
+    ) -> FunnelClient.Commerce.StoreKit.Transaction.OwnershipType? {
         switch ownershipType {
             case .purchased: return .purchased
             case .familyShared: return .familyShared
@@ -107,7 +107,7 @@ enum StoreKitFunnelMapping {
 
     private static func environment(
         _ environment: StoreKitClient.TransactionEnvironment
-    ) -> FunnelClient.StoreKit.Transaction.Environment? {
+    ) -> FunnelClient.Commerce.StoreKit.Transaction.Environment? {
         switch environment {
             case .sandbox: return .sandbox
             case .production: return .production
@@ -118,9 +118,9 @@ enum StoreKitFunnelMapping {
 
     private static func period(
         _ period: StoreKitClient.SubscriptionPeriod?
-    ) -> FunnelClient.StoreKit.Transaction.SubscriptionPeriod? {
+    ) -> FunnelClient.Commerce.StoreKit.Transaction.SubscriptionPeriod? {
         guard let period else { return nil }
-        let unit: FunnelClient.StoreKit.Transaction.SubscriptionPeriod.Unit
+        let unit: FunnelClient.Commerce.StoreKit.Transaction.SubscriptionPeriod.Unit
         switch period.unit {
             case .day: unit = .day
             case .week: unit = .week
@@ -136,12 +136,12 @@ enum StoreKitFunnelMapping {
     static func offer(
         appliedType: StoreKit.Transaction.OfferType?,
         introductoryOffer: StoreKitClient.SubscriptionOffer?
-    ) -> FunnelClient.StoreKit.Transaction.Offer? {
+    ) -> FunnelClient.Commerce.StoreKit.Transaction.Offer? {
         guard appliedType == .introductory,
             let introductoryOffer,
             introductoryOffer.type == .introductory
         else { return nil }
-        let paymentMode: FunnelClient.StoreKit.Transaction.Offer.PaymentMode
+        let paymentMode: FunnelClient.Commerce.StoreKit.Transaction.Offer.PaymentMode
         switch introductoryOffer.paymentMode {
             case .freeTrial: paymentMode = .freeTrial
             case .payUpFront: paymentMode = .payUpFront

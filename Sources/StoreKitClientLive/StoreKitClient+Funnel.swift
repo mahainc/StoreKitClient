@@ -27,18 +27,18 @@ import UIKit
 ///
 /// Every StoreKit decision — which product type takes which purchase path, when a
 /// transaction may be finished — belongs to `StoreKitClient`; this is a translator.
-extension StoreKitClient: FunnelClient.StoreKit.Providing {
+extension StoreKitClient: FunnelClient.Commerce.StoreKit.Providing {
     // MARK: Purchase
 
-    public func purchase(skuID: String) async -> FunnelClient.StoreKit.Outcome {
+    public func purchase(skuID: String) async -> FunnelClient.Commerce.StoreKit.Outcome {
         await buy(skuID: skuID, credit: nil)
     }
 
     public func purchase(
         skuID: String,
         creditGrant: UInt32,
-        creditVerifier: FunnelClient.StoreKit.CreditVerifier?
-    ) async -> FunnelClient.StoreKit.Outcome {
+        creditVerifier: FunnelClient.Commerce.StoreKit.CreditVerifier?
+    ) async -> FunnelClient.Commerce.StoreKit.Outcome {
         @Dependency(\.logClient) var log
         guard let creditVerifier else {
             // A grant with nothing to verify it would take the user's money and credit
@@ -61,7 +61,7 @@ extension StoreKitClient: FunnelClient.StoreKit.Providing {
     private func buy(
         skuID: String,
         credit: Credit?
-    ) async -> FunnelClient.StoreKit.Outcome {
+    ) async -> FunnelClient.Commerce.StoreKit.Outcome {
         @Dependency(\.logClient) var log
         guard let product = try? await self.loadProducts([skuID]).first else {
             log.funnel.paywall.error("purchase FAILED product not found sku=\(skuID)")
@@ -149,7 +149,7 @@ extension StoreKitClient: FunnelClient.StoreKit.Providing {
 
     // MARK: Restore
 
-    public func restore(productIDs: [String]) async throws -> FunnelClient.StoreKit.Transaction? {
+    public func restore(productIDs: [String]) async throws -> FunnelClient.Commerce.StoreKit.Transaction? {
         @Dependency(\.logClient) var log
         let wanted = Set(productIDs.filter { !$0.isEmpty })
         // Rethrown rather than swallowed: a sync failure means "we could not tell", which is
@@ -181,7 +181,7 @@ extension StoreKitClient: FunnelClient.StoreKit.Providing {
     /// type decides what qualifies before any date is compared. A non-subscription has no
     /// expiration at all, so it would otherwise be reported as the user's plan whenever it is
     /// the only thing they own.
-    public func currentSubscription() async -> FunnelClient.StoreKit.Transaction? {
+    public func currentSubscription() async -> FunnelClient.Commerce.StoreKit.Transaction? {
         @Dependency(\.logClient) var log
         let owned = await self.restorePurchases()
         let subscriptions = owned.filter { StoreKitFunnelMapping.isSubscription($0.productType) }
@@ -234,12 +234,12 @@ extension StoreKitClient: FunnelClient.StoreKit.Providing {
 
     // MARK: Streams
 
-    public func subscriptionUpdates() -> AsyncStream<FunnelClient.StoreKit.Transaction> {
+    public func subscriptionUpdates() -> AsyncStream<FunnelClient.Commerce.StoreKit.Transaction> {
         StoreKitSubscriptionBridge.shared.stream(for: self)
     }
 
     public func startRedeliveryListener(
-        verifier: @escaping FunnelClient.StoreKit.CreditVerifier
+        verifier: @escaping FunnelClient.Commerce.StoreKit.CreditVerifier
     ) -> Task<Void, Never> {
         self.redeliveryListener { transaction in
             switch await verifier(String(transaction.id), transaction.productID) {
@@ -255,7 +255,7 @@ extension StoreKitClient: FunnelClient.StoreKit.Providing {
 
     private struct Credit {
         let grant: UInt32
-        let verifier: FunnelClient.StoreKit.CreditVerifier
+        let verifier: FunnelClient.Commerce.StoreKit.CreditVerifier
     }
 
     /// Carries the backend's answer out of the verify closure, which can only signal failure.

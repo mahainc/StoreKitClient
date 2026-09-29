@@ -19,16 +19,16 @@ import StoreKitClient
 actor StoreKitSubscriptionBridge {
     static let shared = StoreKitSubscriptionBridge()
 
-    private var continuations: [UUID: AsyncStream<FunnelClient.StoreKit.Transaction>.Continuation] = [:]
+    private var continuations: [UUID: AsyncStream<FunnelClient.Commerce.StoreKit.Transaction>.Continuation] = [:]
     private var bridge: Task<Void, Never>?
 
-    func emit(_ transaction: FunnelClient.StoreKit.Transaction) {
+    func emit(_ transaction: FunnelClient.Commerce.StoreKit.Transaction) {
         for continuation in continuations.values {
             continuation.yield(transaction)
         }
     }
 
-    nonisolated func stream(for client: StoreKitClient) -> AsyncStream<FunnelClient.StoreKit.Transaction> {
+    nonisolated func stream(for client: StoreKitClient) -> AsyncStream<FunnelClient.Commerce.StoreKit.Transaction> {
         AsyncStream { continuation in
             let id = UUID()
             Task { await self.register(id: id, continuation: continuation, client: client) }
@@ -41,7 +41,7 @@ actor StoreKitSubscriptionBridge {
 
     private func register(
         id: UUID,
-        continuation: AsyncStream<FunnelClient.StoreKit.Transaction>.Continuation,
+        continuation: AsyncStream<FunnelClient.Commerce.StoreKit.Transaction>.Continuation,
         client: StoreKitClient
     ) {
         continuations[id] = continuation
